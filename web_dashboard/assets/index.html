@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="茅ヶ崎每日机台数据：日汇总、逐次记录、曲线与预测存档。">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file:; style-src 'self' file:; img-src 'self' data: file:; connect-src 'self'; object-src 'none'; base-uri 'self'">
+  <title>茅ヶ崎 · 每日数据观察台</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#"><span class="brand-mark">K.</span><span>KICONA<small>CHIGASAKI / 茅ヶ崎</small></span></a>
+      <div class="side-label">DAILY OBSERVATORY</div>
+      <nav aria-label="页面导航">
+        <button class="nav active" data-view="daily">每日数据 <span>01</span></button>
+        <button class="nav" data-view="archive">预测存档 <span>02</span></button>
+        <button class="nav" data-view="about">数据与口径 <span>03</span></button>
+      </nav>
+      <div class="side-note"><span class="dot"></span> 本地每日采集<br><p>只展示已采集数据。缺失不是零，历史结果不代表未来收益。</p></div>
+      <div class="side-foot">1000円 / 46枚<br>ジャグラー 已排除</div>
+    </aside>
+    <main>
+      <header><div class="eyebrow">KICONA CHIGASAKI · DATA JOURNAL</div><div class="heading"><h1 id="page-title">每日数据观察台<span>把每一天，连起来看。</span></h1><div class="freshness" id="freshness">正在读取数据…</div></div></header>
+      <div id="error" class="notice error" role="alert" hidden></div>
+      <div id="loading" class="notice" role="status">正在整理已采集的记录…</div>
+      <section id="daily-view" hidden>
+        <div class="toolbar">
+          <label>数据日期<select id="date" aria-label="数据日期"></select></label>
+          <label class="machine-filter">机种<select id="machine" aria-label="筛选机种"><option value="">全部机种</option></select></label>
+          <label>台号 / 机种<input id="search" type="search" placeholder="搜索，例如 633、東京" aria-label="搜索台号或机种"></label>
+          <label class="checkbox"><input id="played-only" type="checkbox">仅已游玩</label>
+          <button id="download" class="button">导出当前表格 ↗</button>
+        </div>
+        <div class="metrics" id="metrics"></div>
+        <div class="main-grid">
+          <section class="panel machine-list"><div class="section-head"><div><span class="eyebrow">MACHINE REGISTER</span><h2>机台一览 <small id="row-count"></small></h2></div><select id="sort" aria-label="排序"><option value="unit">台号 ↑</option><option value="diff">差枚 ↓</option><option value="games">圈数 ↓</option></select></div><div class="table-scroll"><table><thead><tr><th>机台</th><th>G数</th><th>差枚</th><th>BB / RB</th></tr></thead><tbody id="units"></tbody></table></div><p class="table-caption">点选台号查看曲线与逐次记录。0G 不视为负样本。</p></section>
+          <section class="panel detail"><div class="section-head"><div><span class="eyebrow">UNIT DETAIL</span><h2 id="unit-title">选择一台机器</h2></div><span class="pill" id="play-status"></span></div><p id="unit-machine" class="machine-name"></p><div class="mini-metrics" id="unit-metrics"></div><div class="chart-heading"><h3>当日差枚走势</h3><span>数字曲线 · Anaslo</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p><div class="chart-heading"><h3>最近 30 个日历日</h3><span>每日最终差枚 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div><p class="chart-note">各柱独立表示当天结果；未采集、换机种与 0G 留空，不拼接成连续余额。</p></section>
+        </div>
+        <section class="panel events-panel"><div class="section-head"><div><span class="eyebrow">RAW HIT HISTORY</span><h2>逐次记录 <small id="event-title"></small></h2></div><a id="source-link" target="_blank" rel="noopener noreferrer">查看原始页面 ↗</a></div><div id="event-quality" class="notice"></div><div class="table-scroll event-scroll"><table><thead><tr><th>时间</th><th>原始信号</th><th>开奖圈数 G</th><th>原始回数</th><th>单次出玉</th></tr></thead><tbody id="events"></tbody></table></div><p class="table-caption">这里的 BB/RB 是原始计数信号，不统一解释为初当、CZ 或连奖。逐次表本身没有精确出玉。</p></section>
+      </section>
+      <section id="archive-view" hidden>
+        <div class="toolbar"><label>预测目标日<select id="archive-date" aria-label="预测目标日"></select></label><p id="archive-cutoff"></p></div>
+        <div class="notice">只读历史邮件存档，未重算概率。正式预测目标为「次日最终差枚 ≥ +3,000」，不是「单次开奖净上涨 >3,000」。概率列沿用原邮件展示值。</div>
+        <section class="panel"><div class="section-head"><div><span class="eyebrow">ARCHIVED FORECAST</span><h2>原存档暴涨优先榜</h2></div><span id="archive-outcome" class="pill"></span></div><div class="table-scroll"><table><thead><tr><th>原排名</th><th>机种 / 台号</th><th>原邮件概率</th><th>实际最终差枚</th><th>复盘</th></tr></thead><tbody id="predictions"></tbody></table></div><p class="table-caption">没有当日观察、0G 或机种不一致时不判命中；页面不重新选台、不重排模型分数。</p></section>
+        <section class="panel"><div class="section-head"><div><span class="eyebrow">RECORDED EVALUATION</span><h2>对应机种 AUC 存档</h2></div></div><p class="table-caption">对应原邮件展示概率列的 AUC；仅展示已有评估记录，不代表已重新核验训练过程，也不用于 >3000 单段锚点目标。</p><div class="table-scroll"><table><thead><tr><th>机种</th><th>AUC</th><th>正 / 负样本</th><th>原评估窗口</th></tr></thead><tbody id="auc"></tbody></table></div></section>
+        <section class="panel"><div class="section-head"><div><span class="eyebrow">EXPERIMENTAL / SEPARATE TARGET</span><h2>机种权重观察存档</h2></div></div><p class="table-caption">这是试验评分，不是概率；不可跨机种比较。小于 6 台的指定例外仍单独标为试验。</p><div class="table-scroll"><table><thead><tr><th>机种 / 台号</th><th>权重分</th><th>范围</th><th>完整性</th></tr></thead><tbody id="weights"></tbody></table></div></section>
+      </section>
+      <section id="about-view" hidden>
+        <div class="about-grid"><section class="panel"><span class="eyebrow">COVERAGE</span><h2>数据覆盖</h2><div id="coverage"></div></section><section class="panel"><span class="eyebrow">DATA LINEAGE</span><h2>三类数据，分别标注</h2><p>每日 G、差枚、BB/RB：Anaslo 网页数值表。</p><p>本页当日曲线：Anaslo 页面中的数字坐标，不是这里从图片识别出来的。但横轴未完成时间校准，只显示采样点，不据此计算开奖时刻。</p><p>逐次时间、圈数、信号：PAPIMO。每台每天与 BB/RB 核对；缺失或不一致明确标出。</p><p>已有 PAPIMO 图片数字化结果属于另一条数据链，本版不与数值曲线混用。</p></section><section class="panel"><span class="eyebrow">INTERPRETATION</span><h2>如何读这张表</h2><p>差枚是投入与获得之差，并非总出玉。日差枚 ≥3,000 不等于某一次开奖 >3,000。</p><p>0G 是未观察到游玩；缺日不是零。换机种后按当日机种展示，历史不强行连续。</p><p>曲线存在估计误差、截顶与采样限制，不能直接当成精确逐次枚数。本页不新建锚点标签。</p><p>网页展示全部已采集的非ジャグラー机种；正式邮件的至少 6 台及 7 天成熟期筛选不变。</p></section><section class="panel"><span class="eyebrow">UPDATE PATH</span><h2>每日更新方式</h2><p>现有采集任务完成后，重新导出网页数据。采集设备需要保持联网、可运行任务。</p><p>本地网页更新与 GitHub 上线是两个步骤。只有配置并验证发布后，远程网页才会同步；重新打开页面可读取最新版本。</p><p>网页导出只包含白名单数据，不包含邮箱、登录状态、密钥或整个项目。</p><p id="build-time"></p></section></div>
+        <section class="panel"><div class="section-head"><div><span class="eyebrow">SIGNAL REFERENCE</span><h2>已登记的机种信号资料</h2></div></div><p class="table-caption">资料是解释候选，不表示本店接线已全部核实，也不自动进入正式模型。</p><div id="dictionary" class="dictionary"></div></section>
+      </section>
+      <footer><span>茅ヶ崎 · 每日数据观察台</span><span>观察记录，不作收益保证。</span></footer>
+    </main>
+  </div>
+</body>
+</html>
