@@ -1,0 +1,58 @@
+name: Publish Daily Journal
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web_dashboard/**'
+      - '.github/workflows/pages.yml'
+  public:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-journal-pages
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'RoRyou/data_Crawling_Dsta' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the approved snapshot
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Validate neutral data and rendering
+        run: |
+          python3 web_dashboard/verify_data.py
+          node --check web_dashboard/dist/app.js
+          node web_dashboard/test_frontend.mjs
+          cmp web_dashboard/assets/index.html web_dashboard/dist/index.html
+          cmp web_dashboard/assets/app.js web_dashboard/dist/app.js
+          cmp web_dashboard/assets/styles.css web_dashboard/dist/styles.css
+      - name: Package only the public website
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: web_dashboard/dist
+
+  deploy:
+    needs: validate
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Publish the validated website
+        id: deployment
+        uses: actions/deploy-pages@v4

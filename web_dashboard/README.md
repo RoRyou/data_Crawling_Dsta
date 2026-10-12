@@ -2,7 +2,7 @@
 
 每日记录、事件序列、曲线和历史评估的静态观察页。
 
-指定仓库：`RoRyou/data_Crawling_Dsta`。本目录不改变仓库的访问权限，也不自动发布网站。
+指定仓库：`RoRyou/data_Crawling_Dsta`。网页由 GitHub Pages 发布，工作流不会更改仓库的访问权限。
 
 ## 名称与数据
 
@@ -21,7 +21,17 @@
 python3 -m http.server 8765 --directory web_dashboard/dist --bind 127.0.0.1
 ```
 
-然后访问本机的 8765 端口。仓库中的 HTML 默认以源代码显示；本次没有开启网页托管。
+然后访问本机的 8765 端口。
+
+## 网页发布
+
+发布地址：<https://roryou.github.io/data_Crawling_Dsta/>。首次部署成功后可访问。
+
+- 根目录的 `.github/workflows/pages.yml` 在主分支网页文件更新、仓库变为公开或手动运行时触发。
+- 先检查数据和渲染脚本，检查通过才发布；仓库仍为私有时跳过部署。
+- 发布包严格限定为 `web_dashboard/dist`，不包含笔记本、历史提交、本地辞典和适配代码。
+- Pages 的发布来源使用 **GitHub Actions**。可在 Actions 中手动运行 **Publish Daily Journal**。
+- 这是公开网页，没有登录保护。网页发布范围不等于仓库公开范围：公开仓库的其他文件与历史提交仍可被查看。
 
 ## 数据边界
 
@@ -33,7 +43,9 @@ python3 -m http.server 8765 --directory web_dashboard/dist --bind 127.0.0.1
 
 ## 更新与验证
 
-采集设备在本地进行导出、名称映射和检查；本仓库仅接收检查后的中性快照。不要把本地适配代码或对应辞典复制进来。自动推送尚未启用。
+采集设备在本地进行导出、名称映射和检查；本仓库仅接收检查后的中性快照。不要把本地适配代码或对应辞典复制进来。
+
+网页在新快照推送到主分支后自动部署，但采集设备到本仓库的自动推送尚未启用。工作流本身不会采集数据；重新运行也不会产生新的数据日期。
 
 ```sh
 python3 web_dashboard/verify_data.py
