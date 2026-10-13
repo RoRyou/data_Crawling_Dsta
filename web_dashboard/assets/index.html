@@ -6,8 +6,8 @@
   <meta name="description" content="数据集 A每日对象数据：日汇总、逐次记录、曲线与预测存档。">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file:; style-src 'self' file:; img-src 'self' data: file:; connect-src 'self'; object-src 'none'; base-uri 'self'">
   <title>数据集 A · 每日数据观察台</title>
-  <link rel="stylesheet" href="styles.css">
-  <script src="app.js" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20261013-history30">
+  <script src="app.js?v=20261013-history30" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -37,8 +37,17 @@
         <div class="metrics" id="metrics"></div>
         <div class="main-grid">
           <section class="panel category-list"><div class="section-head"><div><span class="eyebrow">ENTITY REGISTER</span><h2>对象一览 <small id="row-count"></small></h2></div><select id="sort" aria-label="排序"><option value="entity">编号 ↑</option><option value="delta">净变化 ↓</option><option value="observations">观察步数 ↓</option></select></div><div class="table-scroll"><table><thead><tr><th>对象</th><th>观察量</th><th>净变化</th><th>A / B</th></tr></thead><tbody id="entities"></tbody></table></div><p class="table-caption">点选编号查看曲线与逐次记录。0 次观察 不视为负样本。</p></section>
-          <section class="panel detail"><div class="section-head"><div><span class="eyebrow">ENTITY DETAIL</span><h2 id="entity-title">选择一个对象</h2></div><span class="pill" id="play-status"></span></div><p id="entity-category" class="category-name"></p><div class="mini-metrics" id="entity-metrics"></div><div class="chart-heading"><h3>当日净变化走势</h3><span>数字曲线 · 来源 A</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p><div class="chart-heading"><h3>最近 30 个日历日</h3><span>每日最终净变化 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div><p class="chart-note">各柱独立表示当天结果；未采集、换类别与 0 次观察 留空，不拼接成连续余额。</p></section>
+          <section class="panel detail"><div class="section-head"><div><span class="eyebrow">ENTITY DETAIL</span><h2 id="entity-title">选择一个对象</h2></div><span class="pill" id="play-status"></span></div><p id="entity-category" class="category-name"></p><div class="mini-metrics" id="entity-metrics"></div><div class="chart-heading"><h3>当日净变化走势</h3><span>数字曲线 · 来源 A</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p><div class="chart-heading"><h3>最近 30 个日历日</h3><span>每日最终净变化 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div><p class="chart-note">各柱独立表示当天结果；未采集、换类别与 0 次观察 留空，不拼接成连续余额。</p><button id="history-open" class="button history-open" aria-controls="history-panel" disabled>查看 30 天累计与每日明细 ↓</button></section>
         </div>
+        <section id="history-panel" class="panel history-panel" tabindex="-1" aria-labelledby="history-title" hidden>
+          <div class="section-head"><div><span class="eyebrow">30-DAY OBSERVED HISTORY</span><h2 id="history-title">30 天累计历史</h2></div><span id="history-range" class="history-range"></span></div>
+          <div id="history-metrics" class="metrics"></div>
+          <div class="chart-heading"><h3>已观察累计走势</h3><span>截至所选日期 · 30 个日历日</span></div>
+          <div id="cumulative-chart" class="chart cumulative-chart"></div>
+          <p id="history-note" class="notice history-note"></p>
+          <div class="chart-heading"><h3>每日明细</h3><span>最近日期在前 · 累计从窗口起点计算</span></div>
+          <div class="table-scroll history-scroll"><table><thead><tr><th>日期</th><th>类别</th><th>观察量</th><th>当日净变化</th><th>已观察累计</th><th>状态</th></tr></thead><tbody id="history-rows"></tbody></table></div>
+        </section>
         <section class="panel events-panel"><div class="section-head"><div><span class="eyebrow">RAW HIT HISTORY</span><h2>逐次记录 <small id="event-title"></small></h2></div><a id="source-link" target="_blank" rel="noopener noreferrer">查看原始页面 ↗</a></div><div id="event-quality" class="notice"></div><div class="table-scroll event-scroll"><table><thead><tr><th>时间</th><th>原始信号</th><th>事件间隔</th><th>原始回数</th><th>单次事件增量</th></tr></thead><tbody id="events"></tbody></table></div><p class="table-caption">这里的 A/B 是原始计数信号，不统一解释为首次事件、阶段事件 或连续事件。逐次表本身没有精确事件增量。</p></section>
       </section>
       <section id="archive-view" hidden>

@@ -9,7 +9,35 @@
   const tone = (n) => n == null || n === 0 ? "muted" : n > 0 ? "positive" : "negative";
   const percent = (n) => n == null ? "—" : `${(n * 100).toFixed(1)}%`;
   const qualityNames = {complete:"逐次计数完整", missing:"逐次表缺失", no_observation:"未观察到活动（0 次观察）", invalid_daily:"日数据数值无效", invalid_events:"逐次记录无效或重复", identity_mismatch:"历史类别归属不一致，记录暂不使用", counter_mismatch:"逐次计数与日汇总不一致", invalid_start:"事件间隔缺失或无效", invalid_time:"逐次时间不可用", ambiguous_order:"同一分钟内的先后顺序无法确定"};
+  const historyNames = {valid:"已计入", missing:"缺记录 · 不补零", inactive:"未活动 · 不计入", invalid:"数值未知 · 不计入", excluded:"早期 / 其他类别 · 不计入"};
   let index, dayData, selectedUnit, currentView = "daily", dayToken = 0, detailToken = 0, archiveToken = 0;
+
+  function summarizeHistory(history, day, category) {
+    const past=history.filter(r=>r.date<=day), lookup=new Map(past.map(r=>[r.date,r]));
+    // Do not join two installations just because the same category returns later.
+    const changedAt=past.filter(r=>r.category!==category).map(r=>r.date).sort().at(-1);
+    const end=new Date(`${day}T00:00:00Z`), counts={valid:0,missing:0,inactive:0,invalid:0,excluded:0};
+    let total=0, observations=0, activityDays=0, positiveDays=0, negativeDays=0;
+    const rows=Array.from({length:30},(_,i)=>{
+      const date=new Date(end); date.setUTCDate(date.getUTCDate()-29+i);
+      const key=date.toISOString().slice(0,10), r=lookup.get(key);
+      let status=changedAt && key<=changedAt ? "excluded" : !r ? "missing" :
+        r.observations===0 ? "inactive" :
+        !Number.isFinite(r.observations) || r.observations<0 || !Number.isFinite(r.delta) ? "invalid" : "valid";
+      counts[status]++;
+      if(status!=="excluded" && r && Number.isFinite(r.observations) && r.observations>0) {
+        observations+=r.observations; activityDays++;
+      }
+      if(status==="valid") {total+=r.delta; positiveDays+=r.delta>0; negativeDays+=r.delta<0;}
+      return {date:key, category:r?.category ?? null, observations:r?.observations ?? null,
+        delta:r?.delta ?? null, value:status==="valid"?r.delta:null,
+        cumulative:status==="valid"?total:null, status};
+    });
+    return {rows, counts, changedAt, start:rows[0].date, end:day,
+      total:counts.valid?total:null, observations:activityDays?observations:null,
+      activityDays, positiveDays, negativeDays, partial:counts.missing+counts.invalid>0};
+  }
+  window.JournalHistory={summarize:summarizeHistory};
 
   function load(key, path) {
     if (cache.has(key)) return Promise.resolve(cache.get(key));
@@ -35,6 +63,9 @@
   }
   async function changeDay() {
     const token = ++dayToken;
+    ++detailToken;
+    $("history-panel").hidden=true;
+    $("history-open").disabled=true;
     $("loading").hidden = false; $("error").hidden = true;
     const day = $("date").value;
     try {
@@ -76,20 +107,51 @@
     const base=y(0).toFixed(2);
     return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="当日净变化采样曲线，横轴为采样点序号，非真实时刻"><title>净变化曲线：${points.length} 个采样点，末点 ${signed(ys.at(-1))} 单位</title>${[hi,(hi+lo)/2,lo].map(n=>`<line x1="${left}" x2="${w-right}" y1="${y(n)}" y2="${y(n)}" class="chart-grid"/><text x="${left-6}" y="${y(n)+3}" text-anchor="end" class="chart-axis">${fmt(Math.round(n))}</text>`).join("")}<path class="chart-fill" d="${path} L${x(points.at(-1)[0])},${base} L${left},${base} Z"/><line x1="${left}" x2="${w-right}" y1="${base}" y2="${base}" class="chart-zero"/><path class="chart-line" d="${path}"/><text x="${left}" y="${h-5}" class="chart-axis">点 ${x0}</text><text x="${w-right}" y="${h-5}" text-anchor="end" class="chart-axis">点 ${points.at(-1)[0]} · 时间轴待校准</text></svg>`;
   }
-  function historyChart(history, day, category) {
-    const end = new Date(`${day}T00:00:00Z`), lookup = new Map(history.map(r=>[r.date,r]));
-    const calendar = Array.from({length:30},(_,i)=>{const d=new Date(end); d.setUTCDate(d.getUTCDate()-29+i); const key=d.toISOString().slice(0,10); const r=lookup.get(key); return {date:key,value:r?.category===category && r.observations>0?r.delta:null};});
+  function historyChart(summary) {
+    const calendar=summary.rows, day=summary.end;
     const ys = calendar.filter(r=>r.value!==null).map(r=>r.value);
     if (!ys.length) return '<div class="empty">当前类别没有可展示的历史观察</div>';
     const w=570,h=115,left=44,top=8,bottom=20,lo=Math.min(0,...ys),hi=Math.max(0,...ys),span=hi-lo||100;
     const y=n=>top+(hi-n)/span*(h-top-bottom), base=y(0), step=(w-left-10)/30;
     return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="近30个日历日每日净变化，缺日、换类别与未活动留空"><line x1="${left}" x2="560" y1="${base}" y2="${base}" class="chart-zero"/>${calendar.map((r,i)=>r.value===null?"":`<rect x="${left+i*step+2}" y="${Math.min(base,y(r.value))}" width="${step-4}" height="${Math.max(1,Math.abs(base-y(r.value)))}" fill="${r.value>=0?'#86a47a':'#c49276'}"><title>${r.date}：${signed(r.value)} 单位</title></rect>`).join("")}<text x="${left-6}" y="${top+4}" text-anchor="end" class="chart-axis">${fmt(hi)}</text><text x="${left-6}" y="${h-bottom}" text-anchor="end" class="chart-axis">${fmt(lo)}</text><text x="${left}" y="${h-3}" class="chart-axis">${calendar[0].date.slice(5)}</text><text x="560" y="${h-3}" text-anchor="end" class="chart-axis">${day.slice(5)}</text></svg>`;
   }
+  function cumulativeChart(summary) {
+    const rows=summary.rows, values=rows.filter(r=>r.cumulative!==null).map(r=>r.cumulative);
+    if(!values.length) return '<div class="empty">这 30 天没有可累计的有效结果，不显示为零。</div>';
+    const w=900,h=225,left=64,right=20,top=20,bottom=32;
+    const lo=Math.min(0,...values),hi=Math.max(0,...values),span=hi-lo||100;
+    const x=i=>left+i/29*(w-left-right), y=n=>top+(hi-n)/span*(h-top-bottom);
+    let path="", connected=false;
+    rows.forEach((r,i)=>{
+      if(r.cumulative===null) {connected=false; return;}
+      path+=`${connected?"L":"M"}${x(i).toFixed(2)},${y(r.cumulative).toFixed(2)} `; connected=true;
+    });
+    return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="近30天已观察累计净变化；断点不跨接，缺记录不填零"><title>${summary.start} 至 ${summary.end} · 已观察合计 ${signed(summary.total)} 单位</title>${[hi,(hi+lo)/2,lo].map(n=>`<line x1="${left}" x2="${w-right}" y1="${y(n)}" y2="${y(n)}" class="chart-grid"/><text x="${left-8}" y="${y(n)+4}" text-anchor="end" class="chart-axis">${fmt(Math.round(n))}</text>`).join("")}<line x1="${left}" x2="${w-right}" y1="${y(0)}" y2="${y(0)}" class="chart-zero"/><path d="${path.trim()}" class="chart-line"/>${rows.map((r,i)=>r.cumulative===null?"":`<circle cx="${x(i)}" cy="${y(r.cumulative)}" r="3.5" class="history-point"><title>${r.date} · 当日 ${signed(r.delta)} · 已观察累计 ${signed(r.cumulative)}</title></circle>`).join("")}${[0,7,14,21,29].map(i=>`<text x="${x(i)}" y="${h-7}" text-anchor="${i===0?"start":i===29?"end":"middle"}" class="chart-axis">${rows[i].date.slice(5)}</text>`).join("")}</svg>`;
+  }
+  function renderHistory(history, day, r) {
+    const summary=summarizeHistory(history,day,r.category), c=summary.counts;
+    $("history-chart").innerHTML=historyChart(summary);
+    $("history-panel").hidden=false;
+    $("history-open").disabled=false;
+    $("history-title").textContent=`${r.entity} 项 · 30 天累计历史`;
+    $("history-range").textContent=`${summary.start} → ${day} · ${r.category}`;
+    const cards=[
+      ["已观察累计净变化",signed(summary.total),summary.partial?"部分合计 · 仍有未知日期":"当前类别范围的有效日合计",tone(summary.total)],
+      ["有效结果天数",`${c.valid} / 30`,`${c.missing} 天缺记录 · ${c.inactive} 天未活动`],
+      ["累计观察量",fmt(summary.observations),`${summary.activityDays} 个已知活动日`],
+      ["正值 / 负值天数",`${summary.positiveDays} / ${summary.negativeDays}`,"仅统计有效结果，不代表未来概率"]
+    ];
+    $("history-metrics").innerHTML=cards.map(([label,value,note,cls])=>`<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${cls||""}">${value}</div><div class="metric-note">${note}</div></div>`).join("");
+    $("history-note").textContent=`从窗口起点累加已知的有效日净变化，并非跨日保留的余额或状态。缺记录 ${c.missing} 天、数值不可用 ${c.invalid} 天均不补零；未活动 ${c.inactive} 天不作为有效结果。${summary.changedAt?`最近一次已知不同类别日期为 ${summary.changedAt}，该日及以前不计入当前累计（窗口内 ${c.excluded} 天）。`:"仅统计当前类别。"} 曲线在无有效结果处断开；之后的数值继续表示已知日合计，不代表缺失日已被补齐。`;
+    $("cumulative-chart").innerHTML=cumulativeChart(summary);
+    $("history-rows").innerHTML=[...summary.rows].reverse().map(row=>`<tr data-history-date="${row.date}" data-history-status="${row.status}"><td>${row.date}</td><td>${esc(row.category??"—")}</td><td>${fmt(row.observations)}</td><td class="${tone(row.delta)}">${signed(row.delta)}</td><td class="${tone(row.cumulative)}">${signed(row.cumulative)}</td><td class="${row.status==="valid"?"":"muted"}">${historyNames[row.status]}</td></tr>`).join("");
+  }
   async function renderDetail() {
     const token = ++detailToken, r = dayData?.entities.find(r=>r.entity===selectedUnit && filtered().some(f=>f.entity===r.entity));
     if (!r) {
       $("entity-title").textContent="没有选中的对象";
       for (const id of ["entity-category","entity-metrics","intraday-chart","history-chart","curve-note","events","event-title","event-quality","play-status"]) $(id).textContent="";
+      $("history-panel").hidden=true; $("history-open").disabled=true;
       $("source-link").hidden=true; return;
     }
     const day=dayData.date;
@@ -104,9 +166,13 @@
     $("event-quality").className=`notice ${r.event_detail.quality==="complete" && r.event_detail.order_quality==="complete"?"good":""}`;
     $("events").innerHTML=r.event_detail.events.length?r.event_detail.events.map(e=>`<tr><td>${esc(e.time)}</td><td>${esc(e.signal)}</td><td>${fmt(e.step)}</td><td>${fmt(e.no)}</td><td class="muted">未提供</td></tr>`).join(""):'<tr><td colspan="5" class="empty">没有可归属到此对象的逐次记录</td></tr>';
     $("source-link").hidden=true;
+    $("history-panel").hidden=true;
+    $("history-open").disabled=true;
     $("history-chart").textContent="读取历史…";
-    const history=await load(`entity:${r.entity}`,`data/units/${r.entity}.js`);
-    if(token===detailToken) $("history-chart").innerHTML=historyChart(history,day,r.category);
+    try {
+      const history=await load(`entity:${r.entity}`,`data/units/${r.entity}.js`);
+      if(token===detailToken) renderHistory(history,day,r);
+    } catch(e) {if(token===detailToken) fail(e);}
   }
   async function renderArchive() {
     if(!index.archives.length) {$("archive-cutoff").textContent="暂无预测存档"; return;}
@@ -159,6 +225,11 @@
     for(const id of ["category","observed-only","sort"]) $(id).addEventListener("change",renderDaily);
     $("search").addEventListener("input",renderDaily);
     $("entities").addEventListener("click",e=>{const row=e.target.closest("[data-entity]");if(row){selectedUnit=Number(row.dataset.entity);renderDaily();}});
+    $("history-open").addEventListener("click",()=>{
+      if($("history-panel").hidden) return;
+      $("history-panel").focus({preventScroll:true});
+      $("history-panel").scrollIntoView({behavior:"auto",block:"start"});
+    });
     $("archive-date").addEventListener("change",()=>renderArchive().catch(fail));
     document.querySelectorAll(".nav").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
     $("download").addEventListener("click",download);
