@@ -29,6 +29,13 @@ def verify(directory=ROOT / "dist"):
     _, index = read_payload(directory / "data/index.js")
     if index.get("dictionary") != {} or index.get("dataset") != "D001":
         raise ValueError("Unexpected dataset metadata")
+    labels = index.get("category_labels", {})
+    if not isinstance(labels, dict) or any(not re.fullmatch(r"C\d{4,}", alias)
+        or not isinstance(label, str) or not label.strip() or len(label) > 100
+        or re.search(r"https?://|[\r\n]", label) for alias, label in labels.items()):
+        raise ValueError("Invalid category display labels")
+    if len(set(labels.values())) != len(labels):
+        raise ValueError("Category display labels collide")
     for target in index["archives"]:
         key, archive = read_payload(directory / f"data/archives/{target}.js")
         if key != f"archive:{target}" or archive.get("target_date") != target:
@@ -44,6 +51,8 @@ def verify(directory=ROOT / "dist"):
         for r in records:
             if not re.fullmatch(r"C\d{4,}", r["category"]):
                 raise ValueError("Invalid category alias")
+            if index.get("schema_version", 0) >= 4 and r["category"] not in labels:
+                raise ValueError("Category display name missing")
             if r["observations"] == 0 and r["observed"] is not False:
                 raise ValueError("Zero-observation semantics changed")
             if any(e["signal"] not in ("E1", "E2") for e in r["event_detail"]["events"]):

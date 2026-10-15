@@ -6,6 +6,7 @@ import vm from "node:vm";
 import {fileURLToPath} from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "dist");
+const appFile=process.env.JOURNAL_TEST_APP || path.join(root,"app.js");
 function readData(relative) {
   let result;
   vm.runInNewContext(fs.readFileSync(path.join(root, relative), "utf8"), {window:{JournalData:{deliver(_key,value){result=value;}}}});
@@ -23,15 +24,25 @@ class Element {
   focus() {this.focused=true;}
   scrollIntoView() {this.scrolled=true;}
 }
-const elements=new Map(), nav=["daily","archive","about"].map(view=>{const e=new Element(view);e.dataset.view=view;return e;});
-const get=id=>{if(!elements.has(id)) elements.set(id,new Element(id));return elements.get(id);};
-get("sort").value="entity";get("error").hidden=true;
-const context=vm.createContext({window:{},console,Intl,Date,Map,Set,Promise,Blob,URL,setTimeout,document:{
-  getElementById:get, querySelectorAll:()=>nav, createElement:tag=>new Element(tag),
-  head:{appendChild(script){queueMicrotask(()=>{try{const file=script.src.split("?")[0];vm.runInContext(fs.readFileSync(path.join(root,file),"utf8"),context);script.onload?.();}catch(e){console.error(e);script.onerror?.();}});}}
-}});
+function runApp(overrides=new Map()) {
+  const elements=new Map(), downloads=[], nav=["daily","archive","about"].map(view=>{const e=new Element(view);e.dataset.view=view;return e;});
+  const get=id=>{if(!elements.has(id)) elements.set(id,new Element(id));return elements.get(id);};
+  get("sort").value="entity";get("error").hidden=true;
+  const context=vm.createContext({window:{},console,Intl,Date,Map,Set,Promise,Blob,setTimeout,
+    URL:{createObjectURL(blob){downloads.push(blob);return "blob:render-smoke";},revokeObjectURL(){}},document:{
+      getElementById:get, querySelectorAll:()=>nav, createElement:tag=>new Element(tag),
+      head:{appendChild(script){queueMicrotask(()=>{try{
+        const file=script.src.split("?")[0], replacement=overrides.get(file);
+        if(replacement) context.window.JournalData.deliver(replacement.key,structuredClone(replacement.value));
+        else vm.runInContext(fs.readFileSync(path.join(root,file),"utf8"),context);
+        script.onload?.();
+      }catch(e){console.error(e);script.onerror?.();}});}}
+    }});
+  vm.runInContext(fs.readFileSync(appFile,"utf8"),context);
+  return {context,get,nav,downloads};
+}
 const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
-vm.runInContext(fs.readFileSync(path.join(root,"app.js"),"utf8"),context);
+const {context,get,nav,downloads}=runApp();
 await settle();
 assert.equal(get("error").hidden,true,get("error").textContent);
 const manifest=context.window.JournalData;
@@ -39,18 +50,27 @@ assert.ok(manifest);
 assert.match(get("metrics").innerHTML,/当前筛选对象/);
 assert.ok(get("entities").innerHTML.includes(`data-entity="${initial.entity}"`));
 assert.equal(get("entity-title").textContent,`${initial.entity} 项`);
+const labelFor=(manifest,code)=>manifest.category_labels?.[code] || code;
+const initialName=labelFor(snapshot,initial.category);
+const escaped=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+assert.equal(get("entity-category").textContent,initialName);
+assert.ok(get("entities").innerHTML.includes(`<small>${escaped(initialName)}</small>`));
+assert.ok(get("category").innerHTML.includes(`<option value="${initial.category}">${escaped(initialName)} · `));
 if(initial.curve.points.length) assert.match(get("intraday-chart").innerHTML,/采样/);
 assert.equal(get("history-panel").hidden,false);
 assert.equal(get("history-open").disabled,false);
 assert.equal(get("history-title").textContent,`${initial.entity} 项 · 30 天累计历史`);
 assert.equal((get("history-rows").innerHTML.match(/data-history-date=/g)||[]).length,30);
 assert.match(get("history-range").textContent,new RegExp(snapshot.latest_date));
+assert.ok(get("history-range").textContent.endsWith(` · ${initialName}`));
+assert.ok(get("history-rows").innerHTML.includes(`<td>${escaped(initialName)}</td>`));
 assert.equal(get("interval-panel").hidden,false);
 assert.equal(get("interval-open").disabled,false);
 get("interval-open").events.click();
 assert.equal(get("interval-panel").scrolled,true);
 assert.equal(get("interval-title").textContent,`${initial.entity} 项 · 近期事件间隔分布`);
 assert.match(get("interval-range").textContent,new RegExp(snapshot.latest_date));
+assert.ok(get("interval-range").textContent.endsWith(` · ${initialName}`));
 assert.match(get("interval-metrics").innerHTML,/当前样本数/);
 assert.match(get("interval-note").textContent,/不保证是首次事件/);
 if(!get("interval-chart").innerHTML.includes('class="empty"')) {
@@ -60,6 +80,22 @@ if(!get("interval-chart").innerHTML.includes('class="empty"')) {
 get("history-open").events.click();
 assert.equal(get("history-panel").focused,true);
 assert.equal(get("history-panel").scrolled,true);
+
+// Display names participate in search; stable identifiers remain valid inputs.
+for(const search of [initialName,initial.category.toLowerCase(),String(initial.entity)]) {
+  get("search").value=search;get("search").events.input();await settle();
+  const expected=latest.entities.filter(r=>`${r.entity} ${r.category} ${labelFor(snapshot,r.category)}`.toLowerCase().includes(search.toLowerCase()));
+  assert.equal(get("row-count").textContent,`${expected.length} 项`);
+  assert.ok(get("entities").innerHTML.includes(`data-entity="${initial.entity}"`));
+}
+get("search").value="";get("category").value=initial.category;get("category").events.change();await settle();
+assert.equal(get("category").value,initial.category);
+assert.equal(get("row-count").textContent,`${latest.entities.filter(r=>r.category===initial.category).length} 项`);
+get("download").events.click();
+const csv=await downloads.at(-1).text();
+assert.ok(csv.includes(`"${String(initialName).replace(/^[=+\-@]/,"'$&").replaceAll('"','""')}"`));
+assert.equal(initial.category,latest.entities.find(r=>r.entity===initial.entity).category);
+get("category").value="";get("category").events.change();await settle();
 
 // Calendar arithmetic and exclusion rules use synthetic records with known sums.
 const summarize=context.window.JournalHistory.summarize;
@@ -197,4 +233,41 @@ nav[2].events.click();await settle();
 assert.equal(get("about-view").hidden,false);
 assert.ok(get("coverage").innerHTML.includes(snapshot.source_entity_days.toLocaleString("zh-CN")));
 assert.equal(get("error").hidden,true,get("error").textContent);
+
+// Labels are text, even in option/aria/table HTML and downloaded CSV fields.
+const hostileName='=Fixture <img src=x onerror="bad()"> & \'quoted\'', fixtureTarget=snapshot.archives[0]||snapshot.latest_date;
+const fixtureLabels={...snapshot.category_labels,[initial.category]:hostileName};
+const fallback=latest.entities.find(r=>r.category!==initial.category);
+if(fallback) delete fixtureLabels[fallback.category];
+const fixtureIndex={...snapshot,category_labels:fixtureLabels,archives:[fixtureTarget]};
+const fixtureArchive={source_cutoff:snapshot.latest_date,
+  candidates:[{category:initial.category,entity:initial.entity,rank:1,p_high:0.2,actual_delta:300,matched:false}],
+  auc:[{category:initial.category,auc:0.6,positives:10,negatives:20,start:snapshot.first_date,end:snapshot.latest_date}],
+  weights:[{category:initial.category,entity:initial.entity,score:0.2,scope:"formal_eligible",status:"ok"}]};
+const fixture=runApp(new Map([
+  ["data/index.js",{key:"index",value:fixtureIndex}],
+  [`data/archives/${fixtureTarget}.js`,{key:`archive:${fixtureTarget}`,value:fixtureArchive}]
+]));
+await settle();
+assert.equal(fixture.get("error").hidden,true,fixture.get("error").textContent);
+assert.equal(fixture.get("entity-category").textContent,hostileName);
+for(const id of ["entities","category","history-rows"]) {
+  assert.ok(fixture.get(id).innerHTML.includes(escaped(hostileName)),id);
+  assert.doesNotMatch(fixture.get(id).innerHTML,/<img\b/,id);
+}
+assert.ok(fixture.get("category").innerHTML.includes(`<option value="${initial.category}">${escaped(hostileName)}`));
+if(fallback) assert.ok(fixture.get("category").innerHTML.includes(`<option value="${fallback.category}">${fallback.category} · `));
+fixture.get("search").value=hostileName;fixture.get("search").events.input();await settle();
+assert.equal(fixture.get("row-count").textContent,`${latest.entities.filter(r=>r.category===initial.category).length} 项`);
+fixture.get("category").value=initial.category;fixture.get("category").events.change();await settle();
+assert.equal(fixture.get("category").value,initial.category);
+fixture.get("download").events.click();
+const escapedCsv=await fixture.downloads.at(-1).text();
+assert.ok(escapedCsv.includes(`"'${hostileName.replaceAll('"','""')}"`));
+fixture.nav[1].events.click();await settle();
+for(const id of ["predictions","auc","weights"]) {
+  assert.ok(fixture.get(id).innerHTML.includes(escaped(hostileName)),id);
+  assert.doesNotMatch(fixture.get(id).innerHTML,/<img\b/,id);
+}
+assert.equal(fixture.get("error").hidden,true,fixture.get("error").textContent);
 console.log("Frontend data/render smoke checks passed (not a browser visual test).");

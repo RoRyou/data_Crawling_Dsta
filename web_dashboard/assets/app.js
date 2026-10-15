@@ -12,6 +12,11 @@
   const historyNames = {valid:"已计入", missing:"缺记录 · 不补零", inactive:"未活动 · 不计入", invalid:"数值未知 · 不计入", excluded:"早期 / 其他类别 · 不计入"};
   let index, dayData, selectedUnit, intervalContext, currentView = "daily", dayToken = 0, detailToken = 0, archiveToken = 0;
 
+  function categoryName(code) {
+    const label=index?.category_labels?.[code];
+    return typeof label==="string" && label.trim() ? label : code ?? "—";
+  }
+
   function summarizeHistory(history, day, category) {
     const past=history.filter(r=>r.date<=day), lookup=new Map(past.map(r=>[r.date,r]));
     // Do not join two installations just because the same category returns later.
@@ -93,7 +98,7 @@
     $("interval-panel").hidden=false;
     $("interval-open").disabled=false;
     $("interval-title").textContent=`${r.entity} 项 · 近期事件间隔分布`;
-    $("interval-range").textContent=`${summary.start} → ${summary.end} · ${r.category}`;
+    $("interval-range").textContent=`${summary.start} → ${summary.end} · ${categoryName(r.category)}`;
     const cards=[["当前样本数",fmt(summary.n),`${c.complete} 个计数完整日 / ${summary.days} 天`],
       ["平均间隔",fmt(summary.mean),"观察步数"],["间隔中位数",fmt(summary.median),"观察步数"],
       ["≤100 步占比",percent(summary.within100),"当前筛选内的历史占比"],
@@ -123,7 +128,7 @@
     const category = $("category").value, search = $("search").value.trim().toLowerCase();
     return (dayData?.entities || []).filter(r => (!category || r.category === category)
       && (!$("observed-only").checked || r.observed)
-      && (!search || `${r.entity} ${r.category}`.toLowerCase().includes(search)))
+      && (!search || `${r.entity} ${r.category} ${categoryName(r.category)}`.toLowerCase().includes(search)))
       .sort((a,b) => $("sort").value === "entity" ? a.entity-b.entity :
         (b[$("sort").value] ?? -Infinity) - (a[$("sort").value] ?? -Infinity) || a.entity-b.entity);
   }
@@ -144,7 +149,7 @@
       const prior = $("category").value;
       const counts = new Map();
       value.entities.forEach(r => counts.set(r.category, (counts.get(r.category) || 0)+1));
-      $("category").innerHTML = '<option value="">全部类别</option>' + [...counts].sort((a,b) => a[0].localeCompare(b[0], "ja")).map(([m,n]) => `<option value="${esc(m)}">${esc(m)} · ${n} 项</option>`).join("");
+      $("category").innerHTML = '<option value="">全部类别</option>' + [...counts].sort((a,b) => categoryName(a[0]).localeCompare(categoryName(b[0]), "ja") || a[0].localeCompare(b[0])).map(([m,n]) => `<option value="${esc(m)}">${esc(categoryName(m))} · ${n} 项</option>`).join("");
       if (counts.has(prior)) $("category").value = prior;
       $("loading").hidden = true;
       renderDaily();
@@ -163,7 +168,7 @@
     $("metrics").innerHTML = cards.map(([label,value,note,cls])=>`<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${cls||""}">${value}</div><div class="metric-note">${note}</div></div>`).join("");
     if (!data.some(r=>r.entity===selectedUnit)) selectedUnit = data.find(r=>r.entity===633)?.entity ?? data.find(r=>r.observed)?.entity ?? data[0]?.entity;
     $("row-count").textContent = `${data.length} 项`;
-    $("entities").innerHTML = data.length ? data.map(r=>`<tr class="entity-row ${r.entity===selectedUnit?"selected":""}" data-entity="${r.entity}"><td><button class="entity-link" data-entity="${r.entity}" aria-label="查看 ${r.entity} 项 ${esc(r.category)}"><strong>${r.entity}</strong><small>${esc(r.category)}</small></button></td><td>${fmt(r.observations)}${r.observations===0?'<small class="muted"> 未活动</small>':""}</td><td class="${tone(r.delta)}">${signed(r.delta)}</td><td>${fmt(r.counter_a)} / ${fmt(r.counter_b)}</td></tr>`).join("") : '<tr><td colspan="4" class="empty">没有符合筛选条件的对象</td></tr>';
+    $("entities").innerHTML = data.length ? data.map(r=>`<tr class="entity-row ${r.entity===selectedUnit?"selected":""}" data-entity="${r.entity}"><td><button class="entity-link" data-entity="${r.entity}" aria-label="查看 ${r.entity} 项 ${esc(categoryName(r.category))}"><strong>${r.entity}</strong><small>${esc(categoryName(r.category))}</small></button></td><td>${fmt(r.observations)}${r.observations===0?'<small class="muted"> 未活动</small>':""}</td><td class="${tone(r.delta)}">${signed(r.delta)}</td><td>${fmt(r.counter_a)} / ${fmt(r.counter_b)}</td></tr>`).join("") : '<tr><td colspan="4" class="empty">没有符合筛选条件的对象</td></tr>';
     renderDetail().catch(fail);
   }
   function lineChart(points) {
@@ -203,7 +208,7 @@
     $("history-panel").hidden=false;
     $("history-open").disabled=false;
     $("history-title").textContent=`${r.entity} 项 · 30 天累计历史`;
-    $("history-range").textContent=`${summary.start} → ${day} · ${r.category}`;
+    $("history-range").textContent=`${summary.start} → ${day} · ${categoryName(r.category)}`;
     const cards=[
       ["已观察累计净变化",signed(summary.total),summary.partial?"部分合计 · 仍有未知日期":"当前类别范围的有效日合计",tone(summary.total)],
       ["有效结果天数",`${c.valid} / 30`,`${c.missing} 天缺记录 · ${c.inactive} 天未活动`],
@@ -213,7 +218,7 @@
     $("history-metrics").innerHTML=cards.map(([label,value,note,cls])=>`<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${cls||""}">${value}</div><div class="metric-note">${note}</div></div>`).join("");
     $("history-note").textContent=`从窗口起点累加已知的有效日净变化，并非跨日保留的余额或状态。缺记录 ${c.missing} 天、数值不可用 ${c.invalid} 天均不补零；未活动 ${c.inactive} 天不作为有效结果。${summary.changedAt?`最近一次已知不同类别日期为 ${summary.changedAt}，该日及以前不计入当前累计（窗口内 ${c.excluded} 天）。`:"仅统计当前类别。"} 曲线在无有效结果处断开；之后的数值继续表示已知日合计，不代表缺失日已被补齐。`;
     $("cumulative-chart").innerHTML=cumulativeChart(summary);
-    $("history-rows").innerHTML=[...summary.rows].reverse().map(row=>`<tr data-history-date="${row.date}" data-history-status="${row.status}"><td>${row.date}</td><td>${esc(row.category??"—")}</td><td>${fmt(row.observations)}</td><td class="${tone(row.delta)}">${signed(row.delta)}</td><td class="${tone(row.cumulative)}">${signed(row.cumulative)}</td><td class="${row.status==="valid"?"":"muted"}">${historyNames[row.status]}</td></tr>`).join("");
+    $("history-rows").innerHTML=[...summary.rows].reverse().map(row=>`<tr data-history-date="${row.date}" data-history-status="${row.status}"><td>${row.date}</td><td>${esc(categoryName(row.category))}</td><td>${fmt(row.observations)}</td><td class="${tone(row.delta)}">${signed(row.delta)}</td><td class="${tone(row.cumulative)}">${signed(row.cumulative)}</td><td class="${row.status==="valid"?"":"muted"}">${historyNames[row.status]}</td></tr>`).join("");
     intervalContext={history,day,r};
     renderIntervals();
   }
@@ -230,7 +235,7 @@
     }
     const day=dayData.date;
     $("entity-title").textContent=`${r.entity} 项`;
-    $("entity-category").textContent=r.category;
+    $("entity-category").textContent=categoryName(r.category);
     $("play-status").textContent=r.observations===0?"未活动":r.observed?"有活动记录":"观察步数未知";
     $("entity-metrics").innerHTML=`<div><span>总 观察量</span><strong>${fmt(r.observations)}</strong></div><div><span>最终净变化</span><strong class="${tone(r.delta)}">${signed(r.delta)}</strong></div><div><span>A / B</span><strong>${fmt(r.counter_a)} / ${fmt(r.counter_b)}</strong></div>`;
     $("intraday-chart").innerHTML=lineChart(r.curve.points);
@@ -257,17 +262,17 @@
     const top=[...archive.candidates].sort((a,b)=>(a.rank??Infinity)-(b.rank??Infinity)).slice(0,10);
     const evaluated=top.filter(r=>r.matched!==null), successes=evaluated.filter(r=>r.matched).length;
     $("archive-outcome").textContent=evaluated.length?`TOP10 已观察 ${evaluated.length} 项 · 命中 ${successes} 项`:"实际结果尚不可复盘";
-    $("predictions").innerHTML=top.map(r=>`<tr><td>${fmt(r.rank)}</td><td>${esc(r.category)} · ${r.entity}</td><td>${percent(r.p_high)}</td><td class="${tone(r.actual_delta)}">${signed(r.actual_delta)}</td><td>${r.matched===null?"未知 / 未活动":r.matched?"命中":"未命中"}</td></tr>`).join("");
-    $("auc").innerHTML=archive.auc.length?archive.auc.map(r=>`<tr><td>${esc(r.category)}</td><td>${r.auc==null?"不可计算":r.auc.toFixed(3)}</td><td>${fmt(r.positives)} / ${fmt(r.negatives)}</td><td>${esc(r.start)} → ${esc(r.end)}</td></tr>`).join(""):'<tr><td colspan="4" class="empty">该日没有 AUC 存档</td></tr>';
+    $("predictions").innerHTML=top.map(r=>`<tr><td>${fmt(r.rank)}</td><td>${esc(categoryName(r.category))} · ${r.entity}</td><td>${percent(r.p_high)}</td><td class="${tone(r.actual_delta)}">${signed(r.actual_delta)}</td><td>${r.matched===null?"未知 / 未活动":r.matched?"命中":"未命中"}</td></tr>`).join("");
+    $("auc").innerHTML=archive.auc.length?archive.auc.map(r=>`<tr><td>${esc(categoryName(r.category))}</td><td>${r.auc==null?"不可计算":r.auc.toFixed(3)}</td><td>${fmt(r.positives)} / ${fmt(r.negatives)}</td><td>${esc(r.start)} → ${esc(r.end)}</td></tr>`).join(""):'<tr><td colspan="4" class="empty">该日没有 AUC 存档</td></tr>';
     const status={partial_event_35pct_missing:"类别项未验证 · 0.35 未计入",insufficient_observations:"活动观察步数不足",ok:"完整试验分"};
-    $("weights").innerHTML=archive.weights.length?archive.weights.map(r=>`<tr><td>${esc(r.category)} · ${fmt(r.entity)}</td><td>${r.score==null?"—":r.score.toFixed(3)}</td><td>${r.scope==="formal_eligible"?"正式范围内的试验评分":"指定例外 · 独立试验"}</td><td>${esc(status[r.status]||r.status)}</td></tr>`).join(""):'<tr><td colspan="4" class="empty">该日没有权重存档</td></tr>';
+    $("weights").innerHTML=archive.weights.length?archive.weights.map(r=>`<tr><td>${esc(categoryName(r.category))} · ${fmt(r.entity)}</td><td>${r.score==null?"—":r.score.toFixed(3)}</td><td>${r.scope==="formal_eligible"?"正式范围内的试验评分":"指定例外 · 独立试验"}</td><td>${esc(status[r.status]||r.status)}</td></tr>`).join(""):'<tr><td colspan="4" class="empty">该日没有权重存档</td></tr>';
   }
   function renderAbout() {
     const latest=index.days[0];
     const entries=[["日数据范围",`${index.first_date} → ${index.latest_date}`],["已采集日期",`${index.days.length} 天`],["对象日记录",fmt(index.source_entity_days)],["最新对象 / 类别",`${latest.entities} / ${latest.categories}`],["逐次文件最新记录",index.latest_events||"缺失"],["最新日逐次计数完整",`${latest.events_complete} / ${latest.entities} 项`],["来源 A 最近任务",`${index.collection.source_a?.status||"未知"}`],["来源 B 最近任务",`${index.collection.source_b?.status||"未知"}`]];
     $("coverage").innerHTML=entries.map(([a,b])=>`<div class="coverage-row"><span>${a}</span><strong>${esc(b)}</strong></div>`).join("");
     $("build-time").textContent=`网页数据导出时间：${index.generated_at}（日本时间）。`;
-    $("dictionary").textContent="固定代号仅用于展示。对应关系保存在所有者本地，不随网页下载；代号不构成加密或访问限制。";
+    $("dictionary").textContent="类别以简短名称显示，内部代号用于筛选和历史关联。简短显示名随网页公开；完整本地辞典、采集来源链接及私有配置不随网页发布。";
   }
   function switchView(view) {
     if(!index) return;
@@ -280,7 +285,7 @@
   function download() {
     const header=["日期","类别","编号","观察量","净变化","A","B","逐次质量"];
     const safe=v=>`"${String(v??"").replace(/^[=+\-@]/,"'$&").replaceAll('"','""')}"`;
-    const lines=[header,...filtered().map(r=>[dayData.date,r.category,r.entity,r.observations,r.delta,r.counter_a,r.counter_b,qualityNames[r.event_detail.quality]])];
+    const lines=[header,...filtered().map(r=>[dayData.date,categoryName(r.category),r.entity,r.observations,r.delta,r.counter_a,r.counter_b,qualityNames[r.event_detail.quality]])];
     const blob=new Blob(["\ufeff"+lines.map(a=>a.map(safe).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"});
     const a=document.createElement("a"),url=URL.createObjectURL(blob); a.href=url;a.download=`journal-${dayData.date}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
