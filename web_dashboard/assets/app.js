@@ -100,7 +100,7 @@
       ["≤200 步占比",percent(summary.within200),"不是下一次事件概率"]];
     $("interval-metrics").innerHTML=cards.map(([label,value,note])=>`<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-note">${note}</div></div>`).join("");
     const max=Math.max(1,...summary.bins.map(b=>b.count));
-    $("interval-chart").innerHTML=summary.n?`<div class="interval-bars" role="list" aria-label="事件间隔频数及占比">${summary.bins.map(b=>`<div class="interval-bin" role="listitem"><span>${b.label} 步</span><div class="interval-track"><div class="interval-fill" style="width:${(b.count/max*100).toFixed(2)}%"></div></div><span>${fmt(b.count)} 次 · ${percent(b.count/summary.n)}</span></div>`).join("")}</div>`:
+    $("interval-chart").innerHTML=summary.n?`<div class="interval-bars" role="list" aria-label="事件间隔频数及占比">${summary.bins.map(b=>`<div class="interval-bin" role="listitem"><span>${b.label} 步</span><progress class="interval-track" value="${b.count}" max="${max}" aria-label="${b.label} 步，${b.count} 次">${percent(b.count/summary.n)}</progress><span>${fmt(b.count)} 次 · ${percent(b.count/summary.n)}</span></div>`).join("")}</div>`:
       `<div class="empty">${c.complete?"有效日期中没有符合当前筛选的记录。":"此时间范围没有可用的完整逐次记录，不显示为零次分布。"}</div>`;
     $("interval-note").textContent=`只统计同一编号、当前类别且逐次计数与日表一致的日期。缺日 ${c.missing} 天，未活动 ${c.inactive} 天，明细缺失或不合格 ${c.unavailable} 天，早期 / 其他类别 ${c.excluded} 天；均不补零。当前信号范围共有 ${summary.rawCount} 条，0–1 步短间隔 ${summary.shortCount} 条${summary.includeShort?"已单列计入":"未计入上方统计，可勾选查看"}。E1/E2 是原始信号，≥2 步也不保证是首次事件；本图不是已确认的首次事件或阶段成功率。相同分钟先后不明不影响频数统计，但不推断序列。${summary.changedAt?`最近已知类别变更前的记录已排除（边界 ${summary.changedAt}）。`:""}`;
   }

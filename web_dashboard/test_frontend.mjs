@@ -53,6 +53,10 @@ assert.equal(get("interval-title").textContent,`${initial.entity} 项 · 近期�
 assert.match(get("interval-range").textContent,new RegExp(snapshot.latest_date));
 assert.match(get("interval-metrics").innerHTML,/当前样本数/);
 assert.match(get("interval-note").textContent,/不保证是首次事件/);
+if(!get("interval-chart").innerHTML.includes('class="empty"')) {
+  assert.match(get("interval-chart").innerHTML,/<progress[^>]+value="\d+" max="\d+"/);
+  assert.doesNotMatch(get("interval-chart").innerHTML,/style=/); // Compatible with style-src 'self'.
+}
 get("history-open").events.click();
 assert.equal(get("history-panel").focused,true);
 assert.equal(get("history-panel").scrolled,true);
