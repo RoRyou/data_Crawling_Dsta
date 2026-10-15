@@ -6,8 +6,8 @@
   <meta name="description" content="数据集 A每日对象数据：日汇总、逐次记录、曲线与预测存档。">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file:; style-src 'self' file:; img-src 'self' data: file:; connect-src 'self'; object-src 'none'; base-uri 'self'">
   <title>数据集 A · 每日数据观察台</title>
-  <link rel="stylesheet" href="styles.css?v=20261013-history30">
-  <script src="app.js?v=20261013-history30" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20261015-intervals">
+  <script src="app.js?v=20261015-intervals" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -37,8 +37,28 @@
         <div class="metrics" id="metrics"></div>
         <div class="main-grid">
           <section class="panel category-list"><div class="section-head"><div><span class="eyebrow">ENTITY REGISTER</span><h2>对象一览 <small id="row-count"></small></h2></div><select id="sort" aria-label="排序"><option value="entity">编号 ↑</option><option value="delta">净变化 ↓</option><option value="observations">观察步数 ↓</option></select></div><div class="table-scroll"><table><thead><tr><th>对象</th><th>观察量</th><th>净变化</th><th>A / B</th></tr></thead><tbody id="entities"></tbody></table></div><p class="table-caption">点选编号查看曲线与逐次记录。0 次观察 不视为负样本。</p></section>
-          <section class="panel detail"><div class="section-head"><div><span class="eyebrow">ENTITY DETAIL</span><h2 id="entity-title">选择一个对象</h2></div><span class="pill" id="play-status"></span></div><p id="entity-category" class="category-name"></p><div class="mini-metrics" id="entity-metrics"></div><div class="chart-heading"><h3>当日净变化走势</h3><span>数字曲线 · 来源 A</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p><div class="chart-heading"><h3>最近 30 个日历日</h3><span>每日最终净变化 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div><p class="chart-note">各柱独立表示当天结果；未采集、换类别与 0 次观察 留空，不拼接成连续余额。</p><button id="history-open" class="button history-open" aria-controls="history-panel" disabled>查看 30 天累计与每日明细 ↓</button></section>
+          <section class="panel detail">
+            <div class="section-head"><div><span class="eyebrow">ENTITY DETAIL</span><h2 id="entity-title">选择一个对象</h2></div><span class="pill" id="play-status"></span></div>
+            <p id="entity-category" class="category-name"></p><div class="mini-metrics" id="entity-metrics"></div>
+            <div class="chart-heading"><h3>当日净变化走势</h3><span>数字曲线 · 来源 A</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p>
+            <div class="chart-heading"><h3>最近 30 个日历日</h3><span>每日最终净变化 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div>
+            <p class="chart-note">各柱独立表示当天结果；未采集、换类别与 0 次观察 留空，不拼接成连续余额。</p>
+            <button id="interval-open" class="button history-open" aria-controls="interval-panel" disabled>查看最近事件间隔分布 ↓</button>
+            <button id="history-open" class="button history-open" aria-controls="history-panel" disabled>查看 30 天累计与每日明细 ↓</button>
+          </section>
         </div>
+        <section id="interval-panel" class="panel interval-panel" tabindex="-1" aria-labelledby="interval-title" hidden>
+          <div class="section-head"><div><span class="eyebrow">RECENT INTERVAL DISTRIBUTION</span><h2 id="interval-title">近期事件间隔分布</h2></div><span id="interval-range" class="history-range"></span></div>
+          <div class="toolbar interval-controls">
+            <label>回看窗口<select id="interval-window" aria-label="间隔分布回看窗口"><option value="30">最近 30 天</option><option value="14">最近 14 天</option><option value="7">最近 7 天</option></select></label>
+            <label>原始信号<select id="interval-signal" aria-label="间隔分布信号筛选"><option value="all">全部信号</option><option value="E1">仅 E1</option><option value="E2">仅 E2</option></select></label>
+            <label class="checkbox"><input id="interval-short" type="checkbox">包含 0–1 步短间隔</label>
+          </div>
+          <div id="interval-metrics" class="metrics interval-metrics"></div>
+          <div class="chart-heading"><h3>间隔区间 · 次数与占比</h3><span>条长按次数缩放 · 首尾区间宽度不同</span></div>
+          <div id="interval-chart" aria-live="polite"></div>
+          <p id="interval-note" class="notice interval-note"></p>
+        </section>
         <section id="history-panel" class="panel history-panel" tabindex="-1" aria-labelledby="history-title" hidden>
           <div class="section-head"><div><span class="eyebrow">30-DAY OBSERVED HISTORY</span><h2 id="history-title">30 天累计历史</h2></div><span id="history-range" class="history-range"></span></div>
           <div id="history-metrics" class="metrics"></div>

@@ -10,7 +10,7 @@
   const percent = (n) => n == null ? "—" : `${(n * 100).toFixed(1)}%`;
   const qualityNames = {complete:"逐次计数完整", missing:"逐次表缺失", no_observation:"未观察到活动（0 次观察）", invalid_daily:"日数据数值无效", invalid_events:"逐次记录无效或重复", identity_mismatch:"历史类别归属不一致，记录暂不使用", counter_mismatch:"逐次计数与日汇总不一致", invalid_start:"事件间隔缺失或无效", invalid_time:"逐次时间不可用", ambiguous_order:"同一分钟内的先后顺序无法确定"};
   const historyNames = {valid:"已计入", missing:"缺记录 · 不补零", inactive:"未活动 · 不计入", invalid:"数值未知 · 不计入", excluded:"早期 / 其他类别 · 不计入"};
-  let index, dayData, selectedUnit, currentView = "daily", dayToken = 0, detailToken = 0, archiveToken = 0;
+  let index, dayData, selectedUnit, intervalContext, currentView = "daily", dayToken = 0, detailToken = 0, archiveToken = 0;
 
   function summarizeHistory(history, day, category) {
     const past=history.filter(r=>r.date<=day), lookup=new Map(past.map(r=>[r.date,r]));
@@ -39,6 +39,72 @@
   }
   window.JournalHistory={summarize:summarizeHistory};
 
+  function summarizeIntervals(history, day, category, options={}) {
+    const days=[7,14,30].includes(Number(options.days))?Number(options.days):30;
+    const signal=["E1","E2"].includes(options.signal)?options.signal:"all", includeShort=options.includeShort===true;
+    const past=history.filter(r=>r.date<=day), lookup=new Map(past.map(r=>[r.date,r]));
+    const changedAt=past.filter(r=>r.category!==category).map(r=>r.date).sort().at(-1);
+    const end=new Date(`${day}T00:00:00Z`), start=new Date(end);start.setUTCDate(start.getUTCDate()-days+1);
+    const counts={complete:0,missing:0,inactive:0,unavailable:0,excluded:0}, frequencies=new Map();
+    let shortCount=0, rawCount=0;
+    for(let i=0;i<days;i++) {
+      const date=new Date(start);date.setUTCDate(date.getUTCDate()+i);
+      const key=date.toISOString().slice(0,10), r=lookup.get(key), detail=r?.interval_detail;
+      if((changedAt && key<=changedAt) || (r && r.category!==category)) {counts.excluded++;continue;}
+      if(!r) {counts.missing++;continue;}
+      if(r.observations===0) {counts.inactive++;continue;}
+      // Frequency counts need complete counters, not an invented event ordering.
+      const groups=detail?.groups;
+      const valid=Number.isFinite(r.observations) && r.observations>0 && detail?.quality==="complete"
+        && Array.isArray(groups) && groups.length===2 && new Set(groups.map(g=>g?.signal)).size===2
+        && groups.every(g=>g && ["E1","E2"].includes(g.signal) && Array.isArray(g.values)
+          && g.values.every(v=>Array.isArray(v) && v.length===2 && Number.isSafeInteger(v[0]) && v[0]>=0 && Number.isSafeInteger(v[1]) && v[1]>0)
+          && new Set(g.values.map(v=>v[0])).size===g.values.length
+          && Number.isSafeInteger(r[g.signal==="E1"?"counter_a":"counter_b"])
+          && g.values.reduce((sum,v)=>sum+v[1],0)===r[g.signal==="E1"?"counter_a":"counter_b"]);
+      if(!valid) {counts.unavailable++;continue;}
+      counts.complete++;
+      for(const group of groups) if(signal==="all" || group.signal===signal) {
+        for(const [step,n] of group.values) {
+          rawCount+=n;
+          if(step<=1) shortCount+=n;
+          if(includeShort || step>1) frequencies.set(step,(frequencies.get(step)||0)+n);
+        }
+      }
+    }
+    const values=[...frequencies].sort((a,b)=>a[0]-b[0]), n=values.reduce((sum,v)=>sum+v[1],0);
+    const at=position=>{let seen=0;for(const [value,count] of values){seen+=count;if(seen>position)return value;}return null;};
+    const share=limit=>n?values.filter(([v])=>v<=limit).reduce((sum,v)=>sum+v[1],0)/n:null;
+    const bins=[...(includeShort?[{lo:0,hi:1,label:"0–1"}]:[]),{lo:2,hi:99,label:"2–99"},
+      ...Array.from({length:9},(_,i)=>({lo:(i+1)*100,hi:(i+2)*100-1,label:`${(i+1)*100}–${(i+2)*100-1}`})),
+      {lo:1000,hi:Infinity,label:"≥1,000"}].map(bin=>({...bin,
+        count:values.filter(([v])=>v>=bin.lo && v<=bin.hi).reduce((sum,v)=>sum+v[1],0)}));
+    return {days,start:start.toISOString().slice(0,10),end:day,changedAt,signal,includeShort,counts,shortCount,rawCount,n,bins,
+      mean:n?values.reduce((sum,[value,count])=>sum+value*count,0)/n:null,
+      median:n?(at(Math.floor((n-1)/2))+at(Math.floor(n/2)))/2:null,within100:share(100),within200:share(200)};
+  }
+  window.JournalIntervals={summarize:summarizeIntervals};
+
+  function renderIntervals() {
+    if(!intervalContext) return;
+    const {history,day,r}=intervalContext;
+    const summary=summarizeIntervals(history,day,r.category,{days:$("interval-window").value,
+      signal:$("interval-signal").value,includeShort:$("interval-short").checked}), c=summary.counts;
+    $("interval-panel").hidden=false;
+    $("interval-open").disabled=false;
+    $("interval-title").textContent=`${r.entity} 项 · 近期事件间隔分布`;
+    $("interval-range").textContent=`${summary.start} → ${summary.end} · ${r.category}`;
+    const cards=[["当前样本数",fmt(summary.n),`${c.complete} 个计数完整日 / ${summary.days} 天`],
+      ["平均间隔",fmt(summary.mean),"观察步数"],["间隔中位数",fmt(summary.median),"观察步数"],
+      ["≤100 步占比",percent(summary.within100),"当前筛选内的历史占比"],
+      ["≤200 步占比",percent(summary.within200),"不是下一次事件概率"]];
+    $("interval-metrics").innerHTML=cards.map(([label,value,note])=>`<div class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-note">${note}</div></div>`).join("");
+    const max=Math.max(1,...summary.bins.map(b=>b.count));
+    $("interval-chart").innerHTML=summary.n?`<div class="interval-bars" role="list" aria-label="事件间隔频数及占比">${summary.bins.map(b=>`<div class="interval-bin" role="listitem"><span>${b.label} 步</span><div class="interval-track"><div class="interval-fill" style="width:${(b.count/max*100).toFixed(2)}%"></div></div><span>${fmt(b.count)} 次 · ${percent(b.count/summary.n)}</span></div>`).join("")}</div>`:
+      `<div class="empty">${c.complete?"有效日期中没有符合当前筛选的记录。":"此时间范围没有可用的完整逐次记录，不显示为零次分布。"}</div>`;
+    $("interval-note").textContent=`只统计同一编号、当前类别且逐次计数与日表一致的日期。缺日 ${c.missing} 天，未活动 ${c.inactive} 天，明细缺失或不合格 ${c.unavailable} 天，早期 / 其他类别 ${c.excluded} 天；均不补零。当前信号范围共有 ${summary.rawCount} 条，0–1 步短间隔 ${summary.shortCount} 条${summary.includeShort?"已单列计入":"未计入上方统计，可勾选查看"}。E1/E2 是原始信号，≥2 步也不保证是首次事件；本图不是已确认的首次事件或阶段成功率。相同分钟先后不明不影响频数统计，但不推断序列。${summary.changedAt?`最近已知类别变更前的记录已排除（边界 ${summary.changedAt}）。`:""}`;
+  }
+
   function load(key, path) {
     if (cache.has(key)) return Promise.resolve(cache.get(key));
     if (pending.has(key)) return pending.get(key).promise;
@@ -64,6 +130,9 @@
   async function changeDay() {
     const token = ++dayToken;
     ++detailToken;
+    intervalContext=null;
+    $("interval-panel").hidden=true;
+    $("interval-open").disabled=true;
     $("history-panel").hidden=true;
     $("history-open").disabled=true;
     $("loading").hidden = false; $("error").hidden = true;
@@ -145,9 +214,14 @@
     $("history-note").textContent=`从窗口起点累加已知的有效日净变化，并非跨日保留的余额或状态。缺记录 ${c.missing} 天、数值不可用 ${c.invalid} 天均不补零；未活动 ${c.inactive} 天不作为有效结果。${summary.changedAt?`最近一次已知不同类别日期为 ${summary.changedAt}，该日及以前不计入当前累计（窗口内 ${c.excluded} 天）。`:"仅统计当前类别。"} 曲线在无有效结果处断开；之后的数值继续表示已知日合计，不代表缺失日已被补齐。`;
     $("cumulative-chart").innerHTML=cumulativeChart(summary);
     $("history-rows").innerHTML=[...summary.rows].reverse().map(row=>`<tr data-history-date="${row.date}" data-history-status="${row.status}"><td>${row.date}</td><td>${esc(row.category??"—")}</td><td>${fmt(row.observations)}</td><td class="${tone(row.delta)}">${signed(row.delta)}</td><td class="${tone(row.cumulative)}">${signed(row.cumulative)}</td><td class="${row.status==="valid"?"":"muted"}">${historyNames[row.status]}</td></tr>`).join("");
+    intervalContext={history,day,r};
+    renderIntervals();
   }
   async function renderDetail() {
     const token = ++detailToken, r = dayData?.entities.find(r=>r.entity===selectedUnit && filtered().some(f=>f.entity===r.entity));
+    intervalContext=null;
+    $("interval-panel").hidden=true;
+    $("interval-open").disabled=true;
     if (!r) {
       $("entity-title").textContent="没有选中的对象";
       for (const id of ["entity-category","entity-metrics","intraday-chart","history-chart","curve-note","events","event-title","event-quality","play-status"]) $(id).textContent="";
@@ -222,6 +296,12 @@
     renderAbout();
     await changeDay();
     $("date").addEventListener("change",changeDay);
+    for(const id of ["interval-window","interval-signal","interval-short"]) $(id).addEventListener("change",renderIntervals);
+    $("interval-open").addEventListener("click",()=>{
+      if($("interval-panel").hidden) return;
+      $("interval-panel").focus({preventScroll:true});
+      $("interval-panel").scrollIntoView({behavior:"auto",block:"start"});
+    });
     for(const id of ["category","observed-only","sort"]) $(id).addEventListener("change",renderDaily);
     $("search").addEventListener("input",renderDaily);
     $("entities").addEventListener("click",e=>{const row=e.target.closest("[data-entity]");if(row){selectedUnit=Number(row.dataset.entity);renderDaily();}});

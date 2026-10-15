@@ -45,6 +45,14 @@ assert.equal(get("history-open").disabled,false);
 assert.equal(get("history-title").textContent,`${initial.entity} 项 · 30 天累计历史`);
 assert.equal((get("history-rows").innerHTML.match(/data-history-date=/g)||[]).length,30);
 assert.match(get("history-range").textContent,new RegExp(snapshot.latest_date));
+assert.equal(get("interval-panel").hidden,false);
+assert.equal(get("interval-open").disabled,false);
+get("interval-open").events.click();
+assert.equal(get("interval-panel").scrolled,true);
+assert.equal(get("interval-title").textContent,`${initial.entity} 项 · 近期事件间隔分布`);
+assert.match(get("interval-range").textContent,new RegExp(snapshot.latest_date));
+assert.match(get("interval-metrics").innerHTML,/当前样本数/);
+assert.match(get("interval-note").textContent,/不保证是首次事件/);
 get("history-open").events.click();
 assert.equal(get("history-panel").focused,true);
 assert.equal(get("history-panel").scrolled,true);
@@ -96,11 +104,64 @@ assert.equal(summarize(swapped,"2026-09-13","C0001").total,9000);
 assert.equal(summarize([],"2024-03-01","C0001").start,"2024-02-01");
 assert.equal(summarize([],"2026-01-01","C0001").start,"2025-12-03");
 
+// Interval frequencies preserve natural event counts; unavailable days never add zero events.
+const intervals=context.window.JournalIntervals.summarize;
+const profile=(e1,e2)=>({quality:"complete",order_quality:"complete",groups:[
+  {signal:"E1",values:e1},{signal:"E2",values:e2}]});
+const intervalRow=(date,e1,e2,extra={})=>({date,category:"C0001",observations:1000,
+  counter_a:e1.reduce((n,v)=>n+v[1],0),counter_b:e2.reduce((n,v)=>n+v[1],0),
+  interval_detail:profile(e1,e2),...extra});
+const intervalHistory=[
+  intervalRow("2026-10-12",[[0,2],[1,3],[99,1],[100,1],[200,2],[201,1],[1000,1]],[[50,1],[300,1]]),
+  intervalRow("2026-10-11",[[2,1]],[[100,1]],{interval_detail:{...profile([[2,1]],[[100,1]]),order_quality:"ambiguous_order"}}),
+  intervalRow("2026-10-10",[[9999,1]],[],{observations:0}),
+  intervalRow("2026-10-09",[[9999,1]],[],{interval_detail:{quality:"counter_mismatch",groups:[]}}),
+  intervalRow("2026-09-01",[[9999,1]],[]), // Outside the window.
+  intervalRow("2026-10-13",[[9999,1]],[],{category:"C0002"}) // Future category cannot affect boundary.
+];
+let distribution=intervals(intervalHistory,"2026-10-12","C0001",{days:7});
+assert.equal(distribution.start,"2026-10-06");assert.equal(distribution.end,"2026-10-12");
+assert.equal(distribution.n,10);assert.equal(distribution.rawCount,15);assert.equal(distribution.shortCount,5);
+assert.equal(distribution.counts.complete,2);assert.equal(distribution.counts.inactive,1);
+assert.equal(distribution.counts.unavailable,1);assert.equal(distribution.counts.missing,3);
+assert.equal(distribution.mean,225.2);assert.equal(distribution.median,150);
+assert.equal(distribution.within100,0.5);assert.equal(distribution.within200,0.7);
+assert.equal(distribution.bins.find(b=>b.label==="2–99").count,3);
+assert.equal(distribution.bins.find(b=>b.label==="100–199").count,2);
+assert.equal(distribution.bins.find(b=>b.label==="200–299").count,3);
+assert.equal(distribution.bins.find(b=>b.label==="≥1,000").count,1);
+distribution=intervals(intervalHistory,"2026-10-12","C0001",{days:7,signal:"E2"});
+assert.equal(distribution.n,3);assert.equal(distribution.mean,150);assert.equal(distribution.median,100);
+distribution=intervals(intervalHistory,"2026-10-12","C0001",{days:7,includeShort:true});
+assert.equal(distribution.n,15);assert.equal(distribution.bins[0].count,5);
+assert.equal(distribution.median,99);assert.equal(distribution.within200,12/15);
+const replacement=[intervalRow("2026-10-09",[[9999,1]],[]),
+  intervalRow("2026-10-10",[[9999,1]],[],{category:"C0002"}),intervalRow("2026-10-11",[[200,1]],[])];
+distribution=intervals(replacement,"2026-10-12","C0001",{days:7});
+assert.equal(distribution.n,1);assert.equal(distribution.mean,200);assert.equal(distribution.changedAt,"2026-10-10");
+assert.equal(distribution.counts.excluded,5);
+for(const detail of [undefined,{quality:"complete",groups:[]},profile([[2,0]],[]),profile([[2,1],[2,1]],[]),
+  profile([[null,1]],[]),{quality:"complete",groups:[null,{signal:"E2",values:[]}]},profile([null],[])]) {
+  distribution=intervals([intervalRow("2026-10-12",[[2,1]],[],{interval_detail:detail})],"2026-10-12","C0001");
+  assert.equal(distribution.n,0);assert.equal(distribution.counts.unavailable,1);assert.equal(distribution.mean,null);
+}
+distribution=intervals([intervalRow("2026-10-12",[],[[300,1]])],"2026-10-12","C0001",{signal:"E1"});
+assert.equal(distribution.n,0);assert.equal(distribution.counts.complete,1);assert.equal(distribution.within100,null);
+assert.equal(intervals([],"2024-03-01","C0001",{days:30}).start,"2024-02-01");
+get("interval-window").value="7";get("interval-window").events.change();
+assert.match(get("interval-metrics").innerHTML,/7 天/);
+get("interval-signal").value="E2";get("interval-signal").events.change();
+assert.equal(get("error").hidden,true,get("error").textContent);
+get("interval-short").checked=true;get("interval-short").events.change();
+assert.match(get("interval-note").textContent,/已单列计入/);
+get("interval-window").value="30";get("interval-signal").value="all";get("interval-short").checked=false;
+
 // Rapid selections must end on the last clicked entity, without stale history.
 const alternatives=latest.entities.filter(r=>r.entity!==initial.entity).slice(0,2);
 for(const r of alternatives) get("entities").events.click({target:{closest:()=>({dataset:{entity:String(r.entity)}})}});
 await settle();
 assert.equal(get("history-title").textContent,`${alternatives.at(-1).entity} 项 · 30 天累计历史`);
+assert.equal(get("interval-title").textContent,`${alternatives.at(-1).entity} 项 · 近期事件间隔分布`);
 get("entities").events.click({target:{closest:()=>({dataset:{entity:String(initial.entity)}})}});
 await settle();
 get("category").value=initial.category;get("category").events.change();await settle();
@@ -116,10 +177,13 @@ assert.equal(get("row-count").textContent,"0 项");
 assert.equal(get("source-link").hidden,true);
 assert.equal(get("history-panel").hidden,true);
 assert.equal(get("history-open").disabled,true);
+assert.equal(get("interval-panel").hidden,true);
+assert.equal(get("interval-open").disabled,true);
 get("search").value="";get("category").value="";
 const older=snapshot.days.find(d=>d.date<snapshot.latest_date).date;
 get("date").value=older;await get("date").events.change();await settle();
 assert.match(get("history-range").textContent,new RegExp(older));
+assert.match(get("interval-range").textContent,new RegExp(older));
 const displayedDays=[...get("history-rows").innerHTML.matchAll(/data-history-date="([^"]+)"/g)].map(m=>m[1]);
 assert.equal(displayedDays.length,30);assert.ok(displayedDays.every(day=>day<=older));
 nav[1].events.click();await settle();
