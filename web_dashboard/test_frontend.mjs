@@ -53,6 +53,20 @@ assert.equal(get("entity-title").textContent,`${initial.entity} 项`);
 const labelFor=(manifest,code)=>manifest.category_labels?.[code] || code;
 const initialName=labelFor(snapshot,initial.category);
 const escaped=value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function assertCategoryOrder(viewGet,records,manifest) {
+  const counts=new Map();
+  for(const record of records) counts.set(record.category,(counts.get(record.category)||0)+1);
+  const expected=[...counts.keys()].sort((a,b)=>counts.get(b)-counts.get(a)
+    || labelFor(manifest,a).localeCompare(labelFor(manifest,b),"ja") || a.localeCompare(b));
+  const options=[...viewGet("category").innerHTML.matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)];
+  assert.deepEqual(options.map(m=>m[1]),["",...expected],"Category values retain IDs in daily-count/name/ID order");
+  assert.equal(options[0][2],"全部类别","All categories stays first");
+  for(let i=0;i<expected.length;i++) {
+    const code=expected[i];
+    assert.equal(options[i+1][2],`${escaped(labelFor(manifest,code))} · ${counts.get(code)} 项`);
+  }
+}
+assertCategoryOrder(get,latest.entities,snapshot);
 assert.equal(get("entity-category").textContent,initialName);
 assert.ok(get("entities").innerHTML.includes(`<small>${escaped(initialName)}</small>`));
 assert.ok(get("category").innerHTML.includes(`<option value="${initial.category}">${escaped(initialName)} · `));
@@ -222,6 +236,7 @@ assert.equal(get("interval-open").disabled,true);
 get("search").value="";get("category").value="";
 const older=snapshot.days.find(d=>d.date<snapshot.latest_date).date;
 get("date").value=older;await get("date").events.change();await settle();
+assertCategoryOrder(get,readData(`data/days/${older}.js`).entities,snapshot);
 assert.match(get("history-range").textContent,new RegExp(older));
 assert.match(get("interval-range").textContent,new RegExp(older));
 const displayedDays=[...get("history-rows").innerHTML.matchAll(/data-history-date="([^"]+)"/g)].map(m=>m[1]);
@@ -270,4 +285,20 @@ for(const id of ["predictions","auc","weights"]) {
   assert.doesNotMatch(fixture.get(id).innerHTML,/<img\b/,id);
 }
 assert.equal(fixture.get("error").hidden,true,fixture.get("error").textContent);
+
+// Equal counts and equal labels must still produce a stable identifier order.
+const countGroups=new Map();
+for(const code of new Set(latest.entities.map(r=>r.category))) {
+  const count=latest.entities.filter(r=>r.category===code).length;
+  if(!countGroups.has(count)) countGroups.set(count,[]);
+  countGroups.get(count).push(code);
+}
+const tiedCodes=[...countGroups.values()].find(codes=>codes.length>=2)?.slice(0,2);
+assert.ok(tiedCodes,"The fixture includes categories with equal installed counts");
+const tiedIndex={...snapshot,category_labels:{...snapshot.category_labels,
+  [tiedCodes[0]]:"Sort fixture",[tiedCodes[1]]:"Sort fixture"}};
+const tied=runApp(new Map([["data/index.js",{key:"index",value:tiedIndex}]]));
+await settle();
+assert.equal(tied.get("error").hidden,true,tied.get("error").textContent);
+assertCategoryOrder(tied.get,latest.entities,tiedIndex);
 console.log("Frontend data/render smoke checks passed (not a browser visual test).");

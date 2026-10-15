@@ -149,7 +149,7 @@
       const prior = $("category").value;
       const counts = new Map();
       value.entities.forEach(r => counts.set(r.category, (counts.get(r.category) || 0)+1));
-      $("category").innerHTML = '<option value="">全部类别</option>' + [...counts].sort((a,b) => categoryName(a[0]).localeCompare(categoryName(b[0]), "ja") || a[0].localeCompare(b[0])).map(([m,n]) => `<option value="${esc(m)}">${esc(categoryName(m))} · ${n} 项</option>`).join("");
+      $("category").innerHTML = '<option value="">全部类别</option>' + [...counts].sort((a,b) => b[1]-a[1] || categoryName(a[0]).localeCompare(categoryName(b[0]), "ja") || a[0].localeCompare(b[0])).map(([m,n]) => `<option value="${esc(m)}">${esc(categoryName(m))} · ${n} 项</option>`).join("");
       if (counts.has(prior)) $("category").value = prior;
       $("loading").hidden = true;
       renderDaily();
