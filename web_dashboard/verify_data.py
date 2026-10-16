@@ -1,10 +1,65 @@
 """Validate the neutral static package without requiring its private lookup."""
 import json
+import math
 import re
 from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+
+
+def verify_first_open(record):
+    """Fail closed on the new read-only daily first-event evidence contract."""
+    detail = record.get("first_open_detail")
+    keys = {"quality", "step", "step_quality", "amount", "amount_quality",
+            "depth_base", "depth_ratio", "entry_time", "reason"}
+    if not isinstance(detail, dict) or set(detail) != keys:
+        raise ValueError("Invalid first-event detail fields")
+    if any(not isinstance(detail[k], str) or not re.fullmatch(r"[a-z][a-z0-9_]*", detail[k])
+           for k in ("quality", "reason")):
+        raise ValueError("Invalid first-event quality code")
+    if detail["step_quality"] not in {"observed", "unavailable"} or detail["amount_quality"] not in {
+            "estimated", "lower_bound", "unavailable"}:
+        raise ValueError("Invalid first-event metric quality")
+
+    def numeric(value, integer=False):
+        return (type(value) in (int, float) and math.isfinite(value) and value >= 0
+                and (not integer or type(value) is int))
+
+    known = detail["quality"] == "complete"
+    if known:
+        evidence = record["event_detail"]
+        if (not numeric(record.get("observations"), integer=True) or record["observations"] <= 0
+                or evidence["quality"] != "complete"
+                or evidence["order_quality"] != "complete"):
+            raise ValueError("First-event identity lacks complete ordered daily evidence")
+        if (not isinstance(detail["entry_time"], str)
+                or not re.fullmatch(r"(?:09|1\d|2[0-3]):[0-5]\d", detail["entry_time"])
+                or not any(e["time"] == detail["entry_time"] for e in evidence["events"])):
+            raise ValueError("First-event entry absent from daily evidence")
+    elif any(detail[k] is not None for k in ("step", "amount", "depth_base", "depth_ratio", "entry_time")):
+        raise ValueError("Unidentified first-event metrics must remain unknown")
+    if detail["step_quality"] == "observed":
+        if not known or not numeric(detail["step"], integer=True):
+            raise ValueError("Invalid observed first-event interval")
+        if not any(e["time"] == detail["entry_time"] and e["step"] == detail["step"]
+                   for e in record["event_detail"]["events"]):
+            raise ValueError("First-event interval differs from daily evidence")
+    elif detail["step"] is not None:
+        raise ValueError("Unavailable first-event interval must remain unknown")
+    if detail["amount_quality"] != "unavailable":
+        if not known or not numeric(detail["amount"]):
+            raise ValueError("Invalid first-event increment estimate")
+    elif detail["amount"] is not None:
+        raise ValueError("Unavailable first-event increment must remain unknown")
+    base, ratio = detail["depth_base"], detail["depth_ratio"]
+    if base is None or ratio is None:
+        if base is not None or ratio is not None:
+            raise ValueError("Partial first-event reference ratio")
+    elif (detail["step_quality"] != "observed" or not numeric(base) or base <= 0
+          or not numeric(ratio) or not math.isclose(ratio, detail["step"] / base, rel_tol=1e-9, abs_tol=1e-9)):
+        raise ValueError("Invalid first-event reference ratio")
+    return detail
 
 
 def read_payload(path):
@@ -69,6 +124,8 @@ def verify(directory=ROOT / "dist"):
                 interval_history[(r["entity"], daily["date"])] = {
                     "date": daily["date"], **{k:r[k] for k in ("category", "observations", "delta", "counter_a", "counter_b")},
                     "interval_detail": {"quality": detail["quality"], "order_quality": detail["order_quality"], "groups": groups}}
+                if index.get("schema_version", 0) >= 5:
+                    interval_history[(r["entity"], daily["date"])]["first_open_detail"] = verify_first_open(r)
         if len(records) != summary["entities"]:
             raise ValueError("Summary count mismatch")
         count += len(records)

@@ -6,8 +6,8 @@
   <meta name="description" content="数据集 A每日对象数据：日汇总、逐次记录、曲线与预测存档。">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file:; style-src 'self' file:; img-src 'self' data: file:; connect-src 'self'; object-src 'none'; base-uri 'self'">
   <title>数据集 A · 每日数据观察台</title>
-  <link rel="stylesheet" href="styles.css?v=20261016-no-download">
-  <script src="app.js?v=20261016-no-download" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20261016-first-open">
+  <script src="app.js?v=20261016-first-open" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -39,13 +39,26 @@
           <section class="panel detail">
             <div class="section-head"><div><span class="eyebrow">ENTITY DETAIL</span><h2 id="entity-title">选择一个对象</h2></div><span class="pill" id="play-status"></span></div>
             <p id="entity-category" class="category-name"></p><div class="mini-metrics" id="entity-metrics"></div>
-            <div class="chart-heading"><h3>当日净变化走势</h3><span>数字曲线 · 来源 A</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p>
+            <div class="chart-heading"><h3>当日净变化走势</h3><span>按数值变化展开 · 非时间轴</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p>
             <div class="chart-heading"><h3>最近 30 个日历日</h3><span>每日最终净变化 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div>
             <p class="chart-note">各柱独立表示当天结果；未采集、换类别与 0 次观察 留空，不拼接成连续余额。</p>
+            <button id="first-open-open" class="button history-open" aria-controls="first-open-panel" disabled>查看每日首次事件、首轮与占比 ↓</button>
             <button id="interval-open" class="button history-open" aria-controls="interval-panel" disabled>查看最近事件间隔分布 ↓</button>
             <button id="history-open" class="button history-open" aria-controls="history-panel" disabled>查看 30 天累计与每日明细 ↓</button>
           </section>
         </div>
+        <section id="first-open-panel" class="panel first-open-panel" tabindex="-1" aria-labelledby="first-open-title" hidden>
+          <div class="section-head"><div><span class="eyebrow">FIRST ENTRY · ONE PER DAY</span><h2 id="first-open-title">每日首次事件与首轮</h2></div><span id="first-open-range" class="history-range"></span></div>
+          <div class="toolbar first-open-controls"><label>回看窗口<select id="first-open-window" aria-label="首次事件回看窗口"><option value="30">最近 30 个日历日</option><option value="14">最近 14 个日历日</option><option value="7">最近 7 个日历日</option></select></label><p>每个日期最多一次 · 仅已确认的独立入口</p></div>
+          <div class="table-scroll first-open-summary"><table><thead><tr><th>指标</th><th>有效日 / 窗口</th><th>平均</th><th>中位</th><th>最小</th><th>最大</th><th>历史占比 / 基准</th></tr></thead><tbody id="first-open-stats"></tbody></table></div>
+          <div class="first-open-distributions">
+            <section><div class="chart-heading"><h3>首次确认入口间隔分布</h3><span>入口间隔，不是开店累计 · 纵轴天数</span></div><div id="first-open-step-chart" aria-live="polite"></div></section>
+            <section><div class="chart-heading"><h3>首轮净增量估算分布</h3><span>估算，不是精确支付额 · 纵轴天数</span></div><div id="first-open-amount-chart" aria-live="polite"></div></section>
+          </div>
+          <p class="chart-note">横轴为区间，按类别等距排列；间隔每 100 步一档，末档 ≥1,000 步；净增量每 500 单位一档，从 0 起、末档 ≥5,000。开放区间宽度不同。展开图下表可看每档天数与占比。</p>
+          <p id="first-open-note" class="notice first-open-note"></p>
+          <details class="first-open-audit"><summary>逐日核对：首次入口与首轮估算</summary><div class="table-scroll first-open-scroll"><table><thead><tr><th>日期</th><th>入口时刻</th><th>入口间隔（步）</th><th>首轮净增量（单位）</th><th>间隔 / 基准</th><th>状态</th></tr></thead><tbody id="first-open-rows"></tbody></table></div></details>
+        </section>
         <section id="interval-panel" class="panel interval-panel" tabindex="-1" aria-labelledby="interval-title" hidden>
           <div class="section-head"><div><span class="eyebrow">RECENT INTERVAL DISTRIBUTION</span><h2 id="interval-title">近期事件间隔分布</h2></div><span id="interval-range" class="history-range"></span></div>
           <div class="toolbar interval-controls">
@@ -77,7 +90,7 @@
         <section class="panel"><div class="section-head"><div><span class="eyebrow">EXPERIMENTAL / SEPARATE TARGET</span><h2>类别权重观察存档</h2></div></div><p class="table-caption">这是试验评分，不是概率；不可跨类别比较。小于 6 项的指定例外仍单独标为试验。</p><div class="table-scroll"><table><thead><tr><th>类别 / 编号</th><th>权重分</th><th>范围</th><th>完整性</th></tr></thead><tbody id="weights"></tbody></table></div></section>
       </section>
       <section id="about-view" hidden>
-        <div class="about-grid"><section class="panel"><span class="eyebrow">COVERAGE</span><h2>数据覆盖</h2><div id="coverage"></div></section><section class="panel"><span class="eyebrow">DATA LINEAGE</span><h2>三类数据，分别标注</h2><p>每日观察量、净变化、A/B：来源 A 网页数值表。</p><p>本页当日曲线：来源 A 页面中的数字坐标，不是这里从图片识别出来的。但横轴未完成时间校准，只显示采样点，不据此计算事件时刻。</p><p>逐次时间、观察步数、信号：来源 B。每台每天与 A/B 核对；缺失或不一致明确标出。</p><p>已有 来源 B 图片数字化结果属于另一条数据链，本版不与数值曲线混用。</p></section><section class="panel"><span class="eyebrow">INTERPRETATION</span><h2>如何读这张表</h2><p>净变化是投入与获得之差，并非总事件增量。日净变化 ≥3,000 不等于某一次事件 >3,000。</p><p>0 次观察 是未观察到活动；缺日不是零。换类别后按当日类别展示，历史不强行连续。</p><p>曲线存在估计误差、截顶与采样限制，不能直接当成精确逐次数值。本页不新建锚点标签。</p><p>网页展示全部已采集的类别集合；正式邮件的至少 6 项及 7 天成熟期筛选不变。</p></section><section class="panel"><span class="eyebrow">UPDATE PATH</span><h2>每日更新方式</h2><p>现有采集任务完成后，重新导出网页数据。采集设备需要保持联网、可运行任务。</p><p>本地网页更新与 GitHub 上线是两个步骤。只有配置并验证发布后，远程网页才会同步；重新打开页面可读取最新版本。</p><p>网页导出只包含白名单数据，不包含邮箱、登录状态、密钥或整个项目。</p><p id="build-time"></p></section></div>
+        <div class="about-grid"><section class="panel"><span class="eyebrow">COVERAGE</span><h2>数据覆盖</h2><div id="coverage"></div></section><section class="panel"><span class="eyebrow">DATA LINEAGE</span><h2>三类数据，分别标注</h2><p>每日观察量、净变化、A/B：来源 A 网页数值表。</p><p>本页当日曲线：来源 A 页面中的数字坐标。连续同值点仅在显示时合并，横轴按变化序号排列，不代表实际时刻、时长或观察步数。</p><p>逐次时间、观察步数、信号：来源 B。每台每天与 A/B 核对；缺失或不一致明确标出。</p><p>首轮估算仅使用另一条来源 B 时钟轴图像数据链，与当日数值曲线分开核验，不混用坐标。</p></section><section class="panel"><span class="eyebrow">INTERPRETATION</span><h2>如何读这张表</h2><p>净变化是投入与获得之差，并非总事件增量。日净变化 ≥3,000 不等于某一次事件 >3,000。</p><p>0 次观察 是未观察到活动；缺日不是零。换类别后按当日类别展示，历史不强行连续。</p><p>曲线存在估计误差、截顶与采样限制，不能直接当成精确逐次数值。本页不新建锚点标签。</p><p>网页展示全部已采集的类别集合；正式邮件的至少 6 项及 7 天成熟期筛选不变。</p></section><section class="panel"><span class="eyebrow">UPDATE PATH</span><h2>每日更新方式</h2><p>现有采集任务完成后，重新导出网页数据。采集设备需要保持联网、可运行任务。</p><p>本地网页更新与 GitHub 上线是两个步骤。只有配置并验证发布后，远程网页才会同步；重新打开页面可读取最新版本。</p><p>网页导出只包含白名单数据，不包含邮箱、登录状态、密钥或整个项目。</p><p id="build-time"></p></section></div>
         <section class="panel"><div class="section-head"><div><span class="eyebrow">SIGNAL REFERENCE</span><h2>已登记的类别信号资料</h2></div></div><p class="table-caption">资料是解释候选，不表示来源语义已全部核实，也不自动进入正式模型。</p><div id="dictionary" class="dictionary"></div></section>
       </section>
       <footer><span>数据集 A · 每日数据观察台</span><span>观察记录，不作结果保证。</span></footer>

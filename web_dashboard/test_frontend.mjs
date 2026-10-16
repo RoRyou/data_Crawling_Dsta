@@ -74,7 +74,17 @@ assertCategoryOrder(get,latest.entities,snapshot);
 assert.equal(get("entity-category").textContent,initialName);
 assert.ok(get("entities").innerHTML.includes(`<small>${escaped(initialName)}</small>`));
 assert.ok(get("category").innerHTML.includes(`<option value="${initial.category}">${escaped(initialName)} · `));
-if(initial.curve.points.length) assert.match(get("intraday-chart").innerHTML,/采样/);
+if(initial.curve.points.length && initial.observations>0) assert.match(get("intraday-chart").innerHTML,/变化序号/);
+// Only consecutive equal values are collapsed. Returns to an earlier value
+// remain visible, and displayed spacing never pretends to be time or G.
+const rawCurve=[[0,0],[5,0],[20,10],[21,10],[30,-5],[31,-5],[80,0]], beforeCurve=JSON.stringify(rawCurve);
+const compressed=context.window.JournalCurve.compress(rawCurve);
+assert.equal(JSON.stringify(compressed.points),JSON.stringify([[0,0],[1,10],[2,-5],[3,0]]));
+assert.equal(compressed.rawCount,7);assert.equal(compressed.removed,3);
+assert.equal(JSON.stringify(rawCurve),beforeCurve,"Display compression does not alter source values");
+assert.equal(context.window.JournalCurve.compress([[1,50],[2,50],[3,50]]).points.length,1);
+assert.equal(context.window.JournalCurve.compress([]).points.length,0);
+assert.equal(context.window.JournalCurve.compress([[1,null],[2,20]]).points.length,0);
 assert.equal(get("history-panel").hidden,false);
 assert.equal(get("history-open").disabled,false);
 assert.equal(get("history-title").textContent,`${initial.entity} 项 · 30 天累计历史`);
@@ -300,3 +310,4 @@ await settle();
 assert.equal(tied.get("error").hidden,true,tied.get("error").textContent);
 assertCategoryOrder(tied.get,latest.entities,tiedIndex);
 console.log("Frontend data/render smoke checks passed (not a browser visual test).");
+await import("./test_first_open_frontend.mjs");

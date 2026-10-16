@@ -90,6 +90,104 @@
   }
   window.JournalIntervals={summarize:summarizeIntervals};
 
+  // A confirmed first entry is not necessarily the first raw signal or the
+  // cumulative distance from the start of the day. The exporter owns identity.
+  function summarizeFirstOpen(history, day, category, options={}) {
+    const days=[7,14,30].includes(Number(options.days))?Number(options.days):30;
+    const past=history.filter(r=>r.date<=day), lookup=new Map(past.map(r=>[r.date,r]));
+    const changedAt=past.filter(r=>r.category!==category).map(r=>r.date).sort().at(-1);
+    const end=new Date(`${day}T00:00:00Z`), start=new Date(end);start.setUTCDate(start.getUTCDate()-days+1);
+    const counts={complete:0,no_play:0,no_event:0,missing:0,unknown:0,excluded:0};
+    const rows=Array.from({length:days},(_,i)=>{
+      const date=new Date(start);date.setUTCDate(date.getUTCDate()+i);
+      const key=date.toISOString().slice(0,10), r=lookup.get(key), detail=r?.first_open_detail;
+      let status="unknown";
+      if((changedAt && key<=changedAt) || (r && r.category!==category)) status="excluded";
+      else if(!r) status="missing";
+      else if(r.observations===0) status="no_play";
+      else if(!Number.isFinite(r.observations) || r.observations<0) status="unknown";
+      else if(detail?.quality==="complete") status="complete";
+      else if(detail?.quality==="no_event") status="no_event";
+      else if(!detail || detail.quality==="missing") status="missing";
+      counts[status]++;
+      const complete=status==="complete";
+      const step=complete && detail?.step_quality==="observed" && Number.isSafeInteger(detail.step) && detail.step>=0 ? detail.step : null;
+      const amount=complete && detail?.amount_quality==="estimated" && Number.isFinite(detail.amount) && detail.amount>=0 ? detail.amount : null;
+      const lowerBound=complete && detail?.amount_quality==="lower_bound" && Number.isFinite(detail.amount) && detail.amount>=0 ? detail.amount : null;
+      const depthBase=step!==null && Number.isFinite(detail?.depth_base) && detail.depth_base>0 ? detail.depth_base : null;
+      // Display only a verified ratio supplied by the backend; never invent a baseline.
+      const depthRatio=depthBase!==null && Number.isFinite(detail?.depth_ratio) && detail.depth_ratio>=0 ? detail.depth_ratio : null;
+      return {date:key,status,step,amount,lowerBound,depthBase,depthRatio,
+        entryTime:complete && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(detail?.entry_time||"")?detail.entry_time:null,
+        quality:detail?.quality||"missing",reason:detail?.reason||null};
+    });
+    const describe=values=>{
+      const sorted=[...values].sort((a,b)=>a-b), n=sorted.length;
+      return {n,mean:n?sorted.reduce((a,b)=>a+b,0)/n:null,
+        median:n?(sorted[Math.floor((n-1)/2)]+sorted[Math.floor(n/2)])/2:null,
+        min:n?sorted[0]:null,max:n?sorted.at(-1):null};
+    };
+    const steps=rows.filter(r=>r.step!==null).map(r=>r.step), amounts=rows.filter(r=>r.amount!==null).map(r=>r.amount);
+    const step={...describe(steps),within100:steps.length?steps.filter(v=>v<=100).length/steps.length:null,
+      within200:steps.length?steps.filter(v=>v<=200).length/steps.length:null};
+    const amount={...describe(amounts),over3000:amounts.length?amounts.filter(v=>v>3000).length/amounts.length:null};
+    const bins=(values,definitions)=>definitions.map(b=>{
+      const count=values.filter(v=>v>=b.lo && v<b.hi).length;
+      return {...b,count,share:values.length?count/values.length:null};
+    });
+    step.bins=bins(steps,[...Array.from({length:10},(_,i)=>({lo:i*100,hi:(i+1)*100,label:`${i*100}–${(i+1)*100-1}`})),
+      {lo:1000,hi:Infinity,label:"≥1,000"}]);
+    amount.bins=bins(amounts,[...Array.from({length:10},(_,i)=>({lo:i*500,hi:(i+1)*500,label:`${fmt(i*500)}–<${fmt((i+1)*500)}`})),
+      {lo:5000,hi:Infinity,label:"≥5,000"}]);
+    const depth={...describe(rows.filter(r=>r.depthRatio!==null).map(r=>r.depthRatio)),
+      bases:[...new Set(rows.filter(r=>r.depthRatio!==null).map(r=>r.depthBase))].sort((a,b)=>a-b)};
+    return {days,start:start.toISOString().slice(0,10),end:day,changedAt,counts,rows,step,amount,depth,
+      lowerBoundDays:rows.filter(r=>r.lowerBound!==null).length};
+  }
+  window.JournalFirstOpen={summarize:summarizeFirstOpen};
+
+  function firstOpenDistribution(metric, label, unit) {
+    if(!metric.n) return `<div class="empty">本窗口暂无可确认的${label}，不显示为零次分布。</div>`;
+    const bins=metric.bins, w=940,h=270,left=48,right=18,top=28,bottom=78;
+    const max=Math.max(1,...bins.map(b=>b.count)), x=i=>left+i/(bins.length-1)*(w-left-right), y=n=>top+(max-n)/max*(h-top-bottom);
+    const ticks=[...new Set([0,Math.ceil(max/2),max])].sort((a,b)=>a-b);
+    const path=bins.map((b,i)=>`${i?"L":"M"}${x(i).toFixed(2)},${y(b.count).toFixed(2)}`).join(" ");
+    const svg=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${label}分布，横轴为数值区间，纵轴为天数"><title>${label} · ${metric.n} 个有效日；区间按类别等距排列，首尾区间宽度不同</title><text x="${left}" y="14" class="chart-axis">天数</text>${ticks.map(n=>`<line x1="${left}" x2="${w-right}" y1="${y(n)}" y2="${y(n)}" class="chart-grid"/><text x="${left-8}" y="${y(n)+4}" text-anchor="end" class="chart-axis">${n}</text>`).join("")}<path d="${path}" class="chart-line"/>${bins.map((b,i)=>`<circle cx="${x(i)}" cy="${y(b.count)}" r="4" class="history-point"><title>${b.label} ${unit}：${b.count} 天 / ${metric.n} 天 · ${percent(b.share)}</title></circle><text x="${x(i)}" y="${h-bottom+18}" text-anchor="end" transform="rotate(-35 ${x(i)} ${h-bottom+18})" class="chart-axis">${b.label}</text>`).join("")}<text x="${w-right}" y="${h-6}" text-anchor="end" class="chart-axis">数值区间（${unit}）</text></svg>`;
+    return `<div class="first-open-plot">${svg}</div><details class="first-open-bins"><summary>查看各区间天数与占比（有效 ${metric.n} 天）</summary><div class="table-scroll"><table><thead><tr><th>区间（${unit}）</th><th>天数</th><th>占有效日</th></tr></thead><tbody>${bins.map(b=>`<tr><td>${b.label}</td><td>${b.count} / ${metric.n}</td><td>${percent(b.share)}</td></tr>`).join("")}</tbody></table></div></details>`;
+  }
+
+  function renderFirstOpen() {
+    if(!intervalContext) return;
+    const {history,day,r}=intervalContext;
+    const summary=summarizeFirstOpen(history,day,r.category,{days:$("first-open-window").value}), c=summary.counts;
+    $("first-open-panel").hidden=false;$("first-open-open").disabled=false;
+    $("first-open-title").textContent=`${r.entity} 项 · 每日首次事件与首轮`;
+    $("first-open-range").textContent=`${summary.start} → ${summary.end} · ${categoryName(r.category)}`;
+    const definitions=[
+      ["首次确认入口间隔（步）",summary.step,fmt,`≤100 步 ${percent(summary.step.within100)} · ≤200 步 ${percent(summary.step.within200)}`],
+      ["首轮净增量估算（单位）",summary.amount,signed,`估计值 >3,000 单位 ${percent(summary.amount.over3000)}`],
+      ["入口间隔 / 已核实固定基准",summary.depth,percent,summary.depth.n?`固定基准 ${summary.depth.bases.map(fmt).join(" / ")} 步`:"无可用的已核实基准"]
+    ];
+    $("first-open-stats").innerHTML=definitions.map(([label,m,format,share])=>`<tr><th scope="row">${label}</th><td>${m.n} / ${summary.days}</td><td>${format(m.mean)}</td><td>${format(m.median)}</td><td>${format(m.min)}</td><td>${format(m.max)}</td><td>${share}</td></tr>`).join("");
+    $("first-open-step-chart").innerHTML=firstOpenDistribution(summary.step,"首次确认入口间隔","步");
+    $("first-open-amount-chart").innerHTML=firstOpenDistribution(summary.amount,"首轮净增量估算","单位");
+    $("first-open-note").textContent=`每日最多一次，窗口为 ${summary.days} 个日历日，截至所选日期，不使用未来记录。间隔是首次成功独立入口对应记录的间隔，不是开店至首次事件的累计观察量；失败的阶段信号不单独当作入口。首轮净增量估算为首轮起点至结束窗口的可见峰值净上涨，不是精确支付额；接近区间界线时仍有图像偏差与估计误差，估计值 >3,000 的占比只是估计值分布，不替代已核验的锚点标签，也不能用于精准支付判断。各项均值和占比分母分别为自身有效日，属于已确认样本的历史分布，不是未来发生概率。未活动 ${c.no_play} 天、确认无入口 ${c.no_event} 天、缺记录 ${c.missing} 天、身份或数据未确认 ${c.unknown} 天、早期 / 其他类别 ${c.excluded} 天，均不补零。${summary.lowerBoundDays?`另有 ${summary.lowerBoundDays} 天仅能确定首轮净增量下界，只列明细，不计入估算统计。`:""}基准比例仅使用后端已核实值，单独显示有效日，不按类别名称自行套用。${summary.changedAt?`最近已知类别变更边界为 ${summary.changedAt}，该日及以前排除。`:""}`;
+    $("first-open-note").textContent+=" 固定基准用于历史归一化，不代表当日设定、重置状态或实际触发上限；尚未单独核实计数口径的类别不计算该比例。";
+    const names={complete:"入口身份已确认",no_play:"未活动 · 不计入",no_event:"确认无独立入口 · 不计入",missing:"缺记录 · 不补零",unknown:"未确认 · 不计入",excluded:"早期 / 其他类别 · 不计入"};
+    const reasons={unsupported_mapping:"信号对应关系未核实",counter_mismatch:"计数不一致",ambiguous_order:"记录顺序未确认",invalid_time:"时刻不可用",invalid_start:"间隔不可用",missing:"缺记录",
+      round_end_unconfirmed:"首轮结束边界未确认",graph_missing:"缺首轮图像",graph_identity_mismatch:"首轮图像归属不一致",
+      graph_quality_unavailable:"首轮图像缺损或截断",graph_calibration_unverified:"图像时钟轴未核实",graph_opening_unavailable:"图像缺日初覆盖",
+      graph_daily_mismatch:"图像末值与日表不符",round_time_boundary_ambiguous:"首轮时刻边界过近",graph_round_coverage_missing:"图像未覆盖完整首轮",
+      round_net_rise_unresolved:"首轮上涨量无法分辨",leading_main_event_without_entry:"首段入口缺失，不能跳过",
+      first_chain_boundary_unverified:"首段可能承接前序，边界未确认",daily_ordinal_sequence_unverified:"日初事件序号不完整"};
+    $("first-open-rows").innerHTML=[...summary.rows].reverse().map(row=>{
+      const detail=[names[row.status],...(row.status==="unknown"?[reasons[row.reason]||reasons[row.quality]||"数据口径未核实"]:
+        row.status==="complete" && row.amount===null && row.lowerBound===null?[reasons[row.reason]||"首轮数值暂不可估"]:[])].join("；");
+      const amount=row.amount!==null?`${signed(row.amount)}（估）`:row.lowerBound!==null?`≥${fmt(row.lowerBound)}（仅下界）`:"—";
+      return `<tr data-first-open-date="${row.date}" data-first-open-status="${row.status}"><td>${row.date}</td><td>${row.entryTime||"—"}</td><td>${fmt(row.step)}</td><td>${amount}</td><td>${percent(row.depthRatio)}${row.depthRatio!==null?`<small class="first-open-base">基准 ${fmt(row.depthBase)} 步</small>`:""}</td><td>${detail}</td></tr>`;
+    }).join("");
+  }
+
   function renderIntervals() {
     if(!intervalContext) return;
     const {history,day,r}=intervalContext;
@@ -138,6 +236,8 @@
     intervalContext=null;
     $("interval-panel").hidden=true;
     $("interval-open").disabled=true;
+    $("first-open-panel").hidden=true;
+    $("first-open-open").disabled=true;
     $("history-panel").hidden=true;
     $("history-open").disabled=true;
     $("loading").hidden = false; $("error").hidden = true;
@@ -171,15 +271,23 @@
     $("entities").innerHTML = data.length ? data.map(r=>`<tr class="entity-row ${r.entity===selectedUnit?"selected":""}" data-entity="${r.entity}"><td><button class="entity-link" data-entity="${r.entity}" aria-label="查看 ${r.entity} 项 ${esc(categoryName(r.category))}"><strong>${r.entity}</strong><small>${esc(categoryName(r.category))}</small></button></td><td>${fmt(r.observations)}${r.observations===0?'<small class="muted"> 未活动</small>':""}</td><td class="${tone(r.delta)}">${signed(r.delta)}</td><td>${fmt(r.counter_a)} / ${fmt(r.counter_b)}</td></tr>`).join("") : '<tr><td colspan="4" class="empty">没有符合筛选条件的对象</td></tr>';
     renderDetail().catch(fail);
   }
-  function lineChart(points) {
-    if (!points?.length) return '<div class="empty">当前没有可展示的曲线</div>';
+  function changedCurve(rawPoints) {
+    if(!Array.isArray(rawPoints) || rawPoints.some(p=>!Array.isArray(p) || p.length!==2
+      || !Number.isFinite(p[0]) || !Number.isFinite(p[1]))) return {points:[],rawCount:0,removed:0};
+    const kept=rawPoints.filter((p,i)=>i===0 || p[1]!==rawPoints[i-1][1]);
+    return {points:kept.map((p,i)=>[i,p[1]]),rawCount:rawPoints.length,removed:rawPoints.length-kept.length};
+  }
+  window.JournalCurve={compress:changedCurve};
+  function lineChart(rawPoints) {
+    const {points}=changedCurve(rawPoints);
+    if (!points.length) return '<div class="empty">当前没有可展示的曲线</div>';
     const w=570,h=186,left=44,right=10,top=12,bottom=24;
     const ys=points.map(p=>p[1]), lo=Math.min(0,...ys), hi=Math.max(0,...ys), span=hi-lo||100;
     const x0=points[0][0], dx=points.at(-1)[0]-x0||1;
     const x=(n)=>left+(n-x0)/dx*(w-left-right), y=(n)=>top+(hi-n)/span*(h-top-bottom);
     const path=points.map((p,i)=>`${i?"L":"M"}${x(p[0]).toFixed(2)},${y(p[1]).toFixed(2)}`).join(" ");
     const base=y(0).toFixed(2);
-    return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="当日净变化采样曲线，横轴为采样点序号，非真实时刻"><title>净变化曲线：${points.length} 个采样点，末点 ${signed(ys.at(-1))} 单位</title>${[hi,(hi+lo)/2,lo].map(n=>`<line x1="${left}" x2="${w-right}" y1="${y(n)}" y2="${y(n)}" class="chart-grid"/><text x="${left-6}" y="${y(n)+3}" text-anchor="end" class="chart-axis">${fmt(Math.round(n))}</text>`).join("")}<path class="chart-fill" d="${path} L${x(points.at(-1)[0])},${base} L${left},${base} Z"/><line x1="${left}" x2="${w-right}" y1="${base}" y2="${base}" class="chart-zero"/><path class="chart-line" d="${path}"/><text x="${left}" y="${h-5}" class="chart-axis">点 ${x0}</text><text x="${w-right}" y="${h-5}" text-anchor="end" class="chart-axis">点 ${points.at(-1)[0]} · 时间轴待校准</text></svg>`;
+    return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="当日净变化曲线，连续相同值已合并，横轴为变化序号，不代表时间或观察步数"><title>净变化曲线：起点 + ${points.length-1} 次数值变化，末点 ${signed(ys.at(-1))} 单位</title>${[hi,(hi+lo)/2,lo].map(n=>`<line x1="${left}" x2="${w-right}" y1="${y(n)}" y2="${y(n)}" class="chart-grid"/><text x="${left-6}" y="${y(n)+3}" text-anchor="end" class="chart-axis">${fmt(Math.round(n))}</text>`).join("")}<path class="chart-fill" d="${path} L${x(points.at(-1)[0])},${base} L${left},${base} Z"/><line x1="${left}" x2="${w-right}" y1="${base}" y2="${base}" class="chart-zero"/><path class="chart-line" d="${path}"/>${points.length===1?`<circle cx="${left}" cy="${y(ys[0])}" r="4" class="history-point"/>`:""}<text x="${left}" y="${h-5}" class="chart-axis">起点</text><text x="${w-right}" y="${h-5}" text-anchor="end" class="chart-axis">${points.length-1} 次变化 · 非时间轴</text></svg>`;
   }
   function historyChart(summary) {
     const calendar=summary.rows, day=summary.end;
@@ -220,6 +328,7 @@
     $("cumulative-chart").innerHTML=cumulativeChart(summary);
     $("history-rows").innerHTML=[...summary.rows].reverse().map(row=>`<tr data-history-date="${row.date}" data-history-status="${row.status}"><td>${row.date}</td><td>${esc(categoryName(row.category))}</td><td>${fmt(row.observations)}</td><td class="${tone(row.delta)}">${signed(row.delta)}</td><td class="${tone(row.cumulative)}">${signed(row.cumulative)}</td><td class="${row.status==="valid"?"":"muted"}">${historyNames[row.status]}</td></tr>`).join("");
     intervalContext={history,day,r};
+    renderFirstOpen();
     renderIntervals();
   }
   async function renderDetail() {
@@ -227,6 +336,8 @@
     intervalContext=null;
     $("interval-panel").hidden=true;
     $("interval-open").disabled=true;
+    $("first-open-panel").hidden=true;
+    $("first-open-open").disabled=true;
     if (!r) {
       $("entity-title").textContent="没有选中的对象";
       for (const id of ["entity-category","entity-metrics","intraday-chart","history-chart","curve-note","events","event-title","event-quality","play-status"]) $(id).textContent="";
@@ -238,8 +349,9 @@
     $("entity-category").textContent=categoryName(r.category);
     $("play-status").textContent=r.observations===0?"未活动":r.observed?"有活动记录":"观察步数未知";
     $("entity-metrics").innerHTML=`<div><span>总 观察量</span><strong>${fmt(r.observations)}</strong></div><div><span>最终净变化</span><strong class="${tone(r.delta)}">${signed(r.delta)}</strong></div><div><span>A / B</span><strong>${fmt(r.counter_a)} / ${fmt(r.counter_b)}</strong></div>`;
-    $("intraday-chart").innerHTML=lineChart(r.curve.points);
-    $("curve-note").textContent=r.curve.points.length ? `横轴为采样点，不是事件间隔或时刻。曲线末点与日表相差 ${signed(r.curve.end_delta)} 单位${r.curve.quality==="end_mismatch"?"，超过核对容差，勿用于锚点判定":""}；可能存在采样或截顶误差。` : r.observations===0?"0 次观察：没有观察到活动，不构造一条零事件增量曲线。":"曲线缺失或无效，不填零，也不据此判为负样本。";
+    const compressed=changedCurve(r.curve.points);
+    $("intraday-chart").innerHTML=r.observations===0?'<div class="empty">未观察到活动，不构造零曲线。</div>':lineChart(r.curve.points);
+    $("curve-note").textContent=r.observations===0?"0 次观察：没有观察到活动，不构造一条零事件增量曲线。":compressed.points.length ? `原始 ${compressed.rawCount} 点 → 起点 + ${compressed.points.length-1} 次变化；合并 ${compressed.removed} 个连续同值点，原始数据保留。横轴按变化序号等距排列，不代表时间、时长或观察步数；同值也不等于确认未活动。${compressed.points.length===1?"本日可见数据未出现数值变化。":""}曲线末点与日表相差 ${signed(r.curve.end_delta)} 单位${r.curve.quality==="end_mismatch"?"，超过核对容差，勿用于锚点判定":""}；可能存在采样或截顶误差。` : "曲线缺失或无效，不填零，也不据此判为负样本。";
     $("event-title").textContent=`${day} · ${r.entity} 项`;
     $("event-quality").textContent=`${qualityNames[r.event_detail.quality] || r.event_detail.quality}。日表 A/B ${fmt(r.counter_a)}/${fmt(r.counter_b)}；可见逐次 E1/E2 ${fmt(r.event_detail.visible_a)}/${fmt(r.event_detail.visible_b)}。${r.event_detail.order_quality!==r.event_detail.quality?`顺序：${qualityNames[r.event_detail.order_quality]}。`:""}`;
     $("event-quality").className=`notice ${r.event_detail.quality==="complete" && r.event_detail.order_quality==="complete"?"good":""}`;
@@ -295,6 +407,12 @@
     await changeDay();
     $("date").addEventListener("change",changeDay);
     for(const id of ["interval-window","interval-signal","interval-short"]) $(id).addEventListener("change",renderIntervals);
+    $("first-open-window").addEventListener("change",renderFirstOpen);
+    $("first-open-open").addEventListener("click",()=>{
+      if($("first-open-panel").hidden) return;
+      $("first-open-panel").focus({preventScroll:true});
+      $("first-open-panel").scrollIntoView({behavior:"auto",block:"start"});
+    });
     $("interval-open").addEventListener("click",()=>{
       if($("interval-panel").hidden) return;
       $("interval-panel").focus({preventScroll:true});
