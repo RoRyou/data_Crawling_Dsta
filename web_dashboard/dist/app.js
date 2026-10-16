@@ -256,16 +256,7 @@
     } catch(e) {if (token === dayToken) fail(e);}
   }
   function renderDaily() {
-    const data = filtered(), observed = data.filter(r => r.observed), deltas = observed.map(r=>r.delta).filter(n=>n!==null).sort((a,b)=>a-b);
-    const mid = Math.floor(deltas.length/2), median = deltas.length ? (deltas[mid]+deltas[Math.floor((deltas.length-1)/2)])/2 : null;
-    const sum = deltas.reduce((a,b)=>a+b,0), observations = data.reduce((a,b)=>a+(b.observations||0),0);
-    const cards = [
-      ["当前筛选对象", fmt(data.length), `${new Set(data.map(r=>r.category)).size} 个类别 · ${observed.length} 项有活动`],
-      ["合计净变化 · 已活动", signed(sum), "日终净变化，不等于单次事件增量", tone(sum)],
-      ["净变化中位数 · 已活动", signed(median), "未将 0 次观察 当作观察零", tone(median)],
-      ["总观察量", fmt(observations), `${data.filter(r=>r.event_detail.quality === "complete").length} 项逐次计数完整`]
-    ];
-    $("metrics").innerHTML = cards.map(([label,value,note,cls])=>`<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${cls||""}">${value}</div><div class="metric-note">${note}</div></div>`).join("");
+    const data = filtered();
     if (!data.some(r=>r.entity===selectedUnit)) selectedUnit = data.find(r=>r.entity===633)?.entity ?? data.find(r=>r.observed)?.entity ?? data[0]?.entity;
     $("row-count").textContent = `${data.length} 项`;
     $("entities").innerHTML = data.length ? data.map(r=>`<tr class="entity-row ${r.entity===selectedUnit?"selected":""}" data-entity="${r.entity}"><td><button class="entity-link" data-entity="${r.entity}" aria-label="查看 ${r.entity} 项 ${esc(categoryName(r.category))}"><strong>${r.entity}</strong><small>${esc(categoryName(r.category))}</small></button></td><td>${fmt(r.observations)}${r.observations===0?'<small class="muted"> 未活动</small>':""}</td><td class="${tone(r.delta)}">${signed(r.delta)}</td><td>${fmt(r.counter_a)} / ${fmt(r.counter_b)}</td></tr>`).join("") : '<tr><td colspan="4" class="empty">没有符合筛选条件的对象</td></tr>';

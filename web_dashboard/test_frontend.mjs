@@ -13,6 +13,9 @@ assert.doesNotMatch(htmlSource,/\bid\s*=\s*(["'])download\1/i,"The export contro
 assert.doesNotMatch(htmlSource,/导出表格|下载\s*CSV/i,"The page no longer offers table downloads");
 assert.doesNotMatch(appSource,/\$\(["']download["']\)|function\s+download\s*\(|new\s+Blob\b|createObjectURL|text\/csv|\.download\s*=/,
   "The app no longer binds the export control or constructs downloadable CSV");
+assert.doesNotMatch(htmlSource,/\bid\s*=\s*(["'])metrics\1/i,"The four global summary cards are removed, not hidden");
+assert.doesNotMatch(appSource,/\$\(["']metrics["']\)|当前筛选对象|合计净变化 · 已活动|净变化中位数 · 已活动/,
+  "The app no longer computes or renders the removed global summary row");
 function readData(relative) {
   let result;
   vm.runInNewContext(fs.readFileSync(path.join(root, relative), "utf8"), {window:{JournalData:{deliver(_key,value){result=value;}}}});
@@ -51,7 +54,7 @@ await settle();
 assert.equal(get("error").hidden,true,get("error").textContent);
 const manifest=context.window.JournalData;
 assert.ok(manifest);
-assert.match(get("metrics").innerHTML,/当前筛选对象/);
+assert.ok(!htmlSource.includes('id="metrics"'));
 assert.ok(get("entities").innerHTML.includes(`data-entity="${initial.entity}"`));
 assert.equal(get("entity-title").textContent,`${initial.entity} 项`);
 const labelFor=(manifest,code)=>manifest.category_labels?.[code] || code;
