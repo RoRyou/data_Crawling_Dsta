@@ -7,6 +7,12 @@ import {fileURLToPath} from "node:url";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "dist");
 const appFile=process.env.JOURNAL_TEST_APP || path.join(root,"app.js");
+const appSource=fs.readFileSync(appFile,"utf8");
+const htmlSource=fs.readFileSync(path.join(path.dirname(appFile),"index.html"),"utf8");
+assert.doesNotMatch(htmlSource,/\bid\s*=\s*(["'])download\1/i,"The export control is removed from the page");
+assert.doesNotMatch(htmlSource,/导出表格|下载\s*CSV/i,"The page no longer offers table downloads");
+assert.doesNotMatch(appSource,/\$\(["']download["']\)|function\s+download\s*\(|new\s+Blob\b|createObjectURL|text\/csv|\.download\s*=/,
+  "The app no longer binds the export control or constructs downloadable CSV");
 function readData(relative) {
   let result;
   vm.runInNewContext(fs.readFileSync(path.join(root, relative), "utf8"), {window:{JournalData:{deliver(_key,value){result=value;}}}});
@@ -20,16 +26,14 @@ class Element {
   get innerHTML() {return this._html;}
   addEventListener(event, fn) {this.events[event]=fn;}
   remove() {}
-  click() {}
   focus() {this.focused=true;}
   scrollIntoView() {this.scrolled=true;}
 }
 function runApp(overrides=new Map()) {
-  const elements=new Map(), downloads=[], nav=["daily","archive","about"].map(view=>{const e=new Element(view);e.dataset.view=view;return e;});
+  const elements=new Map(), nav=["daily","archive","about"].map(view=>{const e=new Element(view);e.dataset.view=view;return e;});
   const get=id=>{if(!elements.has(id)) elements.set(id,new Element(id));return elements.get(id);};
   get("sort").value="entity";get("error").hidden=true;
-  const context=vm.createContext({window:{},console,Intl,Date,Map,Set,Promise,Blob,setTimeout,
-    URL:{createObjectURL(blob){downloads.push(blob);return "blob:render-smoke";},revokeObjectURL(){}},document:{
+  const context=vm.createContext({window:{},console,Intl,Date,Map,Set,Promise,setTimeout,document:{
       getElementById:get, querySelectorAll:()=>nav, createElement:tag=>new Element(tag),
       head:{appendChild(script){queueMicrotask(()=>{try{
         const file=script.src.split("?")[0], replacement=overrides.get(file);
@@ -38,11 +42,11 @@ function runApp(overrides=new Map()) {
         script.onload?.();
       }catch(e){console.error(e);script.onerror?.();}});}}
     }});
-  vm.runInContext(fs.readFileSync(appFile,"utf8"),context);
-  return {context,get,nav,downloads};
+  vm.runInContext(appSource,context);
+  return {context,get,nav};
 }
 const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
-const {context,get,nav,downloads}=runApp();
+const {context,get,nav}=runApp();
 await settle();
 assert.equal(get("error").hidden,true,get("error").textContent);
 const manifest=context.window.JournalData;
@@ -105,9 +109,6 @@ for(const search of [initialName,initial.category.toLowerCase(),String(initial.e
 get("search").value="";get("category").value=initial.category;get("category").events.change();await settle();
 assert.equal(get("category").value,initial.category);
 assert.equal(get("row-count").textContent,`${latest.entities.filter(r=>r.category===initial.category).length} 项`);
-get("download").events.click();
-const csv=await downloads.at(-1).text();
-assert.ok(csv.includes(`"${String(initialName).replace(/^[=+\-@]/,"'$&").replaceAll('"','""')}"`));
 assert.equal(initial.category,latest.entities.find(r=>r.entity===initial.entity).category);
 get("category").value="";get("category").events.change();await settle();
 
@@ -249,7 +250,7 @@ assert.equal(get("about-view").hidden,false);
 assert.ok(get("coverage").innerHTML.includes(snapshot.source_entity_days.toLocaleString("zh-CN")));
 assert.equal(get("error").hidden,true,get("error").textContent);
 
-// Labels are text, even in option/aria/table HTML and downloaded CSV fields.
+// Labels are text, even in option/aria/table HTML.
 const hostileName='=Fixture <img src=x onerror="bad()"> & \'quoted\'', fixtureTarget=snapshot.archives[0]||snapshot.latest_date;
 const fixtureLabels={...snapshot.category_labels,[initial.category]:hostileName};
 const fallback=latest.entities.find(r=>r.category!==initial.category);
@@ -276,9 +277,6 @@ fixture.get("search").value=hostileName;fixture.get("search").events.input();awa
 assert.equal(fixture.get("row-count").textContent,`${latest.entities.filter(r=>r.category===initial.category).length} 项`);
 fixture.get("category").value=initial.category;fixture.get("category").events.change();await settle();
 assert.equal(fixture.get("category").value,initial.category);
-fixture.get("download").events.click();
-const escapedCsv=await fixture.downloads.at(-1).text();
-assert.ok(escapedCsv.includes(`"'${hostileName.replaceAll('"','""')}"`));
 fixture.nav[1].events.click();await settle();
 for(const id of ["predictions","auc","weights"]) {
   assert.ok(fixture.get(id).innerHTML.includes(escaped(hostileName)),id);

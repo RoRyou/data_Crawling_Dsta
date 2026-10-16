@@ -282,13 +282,6 @@
     $("page-title").innerHTML={daily:'每日数据观察台<span>把每一天，连起来看。</span>',archive:'预测与复盘存档<span>保留当时的判断，再看真实的结果。</span>',about:'数据与口径<span>知道数据从哪里来，也知道它的边界。</span>'}[view];
     if(view==="archive") renderArchive().catch(fail);
   }
-  function download() {
-    const header=["日期","类别","编号","观察量","净变化","A","B","逐次质量"];
-    const safe=v=>`"${String(v??"").replace(/^[=+\-@]/,"'$&").replaceAll('"','""')}"`;
-    const lines=[header,...filtered().map(r=>[dayData.date,categoryName(r.category),r.entity,r.observations,r.delta,r.counter_a,r.counter_b,qualityNames[r.event_detail.quality]])];
-    const blob=new Blob(["\ufeff"+lines.map(a=>a.map(safe).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8"});
-    const a=document.createElement("a"),url=URL.createObjectURL(blob); a.href=url;a.download=`journal-${dayData.date}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-  }
   async function init() {
     index=await load("index","data/index.js");
     $("date").innerHTML=index.days.map(d=>`<option value="${d.date}">${d.date}</option>`).join("");
@@ -317,7 +310,6 @@
     });
     $("archive-date").addEventListener("change",()=>renderArchive().catch(fail));
     document.querySelectorAll(".nav").forEach(b=>b.addEventListener("click",()=>switchView(b.dataset.view)));
-    $("download").addEventListener("click",download);
   }
   init().catch(fail);
 })();
