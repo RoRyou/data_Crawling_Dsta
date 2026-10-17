@@ -6,8 +6,8 @@
   <meta name="description" content="数据集 A每日对象数据：日汇总、逐次记录、曲线与预测存档。">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file:; style-src 'self' file:; img-src 'self' data: file:; connect-src 'self'; object-src 'none'; base-uri 'self'">
   <title>数据集 A · 每日数据观察台</title>
-  <link rel="stylesheet" href="styles.css?v=20261016-no-summary">
-  <script src="app.js?v=20261016-no-summary" defer></script>
+  <link rel="stylesheet" href="styles.css?v=20261017-review">
+  <script src="app.js?v=20261017-review" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -25,6 +25,7 @@
     <main>
       <header><div class="eyebrow">DAILY RECORDS · DATA JOURNAL</div><div class="heading"><h1 id="page-title">每日数据观察台<span>把每一天，连起来看。</span></h1><div class="freshness" id="freshness">正在读取数据…</div></div></header>
       <div id="error" class="notice error" role="alert" hidden></div>
+      <div id="history-navigation-note" class="notice" aria-live="polite" hidden></div>
       <div id="loading" class="notice" role="status">正在整理已采集的记录…</div>
       <section id="daily-view" hidden>
         <div class="toolbar">
@@ -39,11 +40,12 @@
             <div class="section-head"><div><span class="eyebrow">ENTITY DETAIL</span><h2 id="entity-title">选择一个对象</h2></div><span class="pill" id="play-status"></span></div>
             <p id="entity-category" class="category-name"></p><div class="mini-metrics" id="entity-metrics"></div>
             <div class="chart-heading"><h3>当日净变化走势</h3><span>按数值变化展开 · 非时间轴</span></div><div id="intraday-chart" class="chart"></div><p id="curve-note" class="chart-note"></p>
-            <div class="chart-heading"><h3>最近 30 个日历日</h3><span>每日最终净变化 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div>
-            <p class="chart-note">各柱独立表示当天结果；未采集、换类别与 0 次观察 留空，不拼接成连续余额。</p>
+            <div class="chart-heading"><h3>近 30 日历日的日终结果</h3><span>每天独立 · 每日重置</span></div><div id="history-chart" class="chart small-chart"></div>
+            <p id="history-daily-range" class="chart-note"></p>
+            <p class="chart-note">每柱仅表示一天的日终净变化，不是当日过程；未采集、换类别与 0 次观察 留空，不拼接成跨日余额。</p>
             <button id="first-open-open" class="button history-open" aria-controls="first-open-panel" disabled>查看每日首次事件、首轮与占比 ↓</button>
             <button id="interval-open" class="button history-open" aria-controls="interval-panel" disabled>查看最近事件间隔分布 ↓</button>
-            <button id="history-open" class="button history-open" aria-controls="history-panel" disabled>查看 30 天累计与每日明细 ↓</button>
+            <button id="history-open" class="button history-open" aria-controls="history-panel" disabled>查看 30 日历日累计与每日明细 ↓</button>
           </section>
         </div>
         <section id="first-open-panel" class="panel first-open-panel" tabindex="-1" aria-labelledby="first-open-title" hidden>
@@ -66,17 +68,20 @@
             <label class="checkbox"><input id="interval-short" type="checkbox">包含 0–1 步短间隔</label>
           </div>
           <div id="interval-metrics" class="metrics interval-metrics"></div>
-          <div class="chart-heading"><h3>间隔区间 · 次数与占比</h3><span>条长按次数缩放 · 首尾区间宽度不同</span></div>
+          <div class="chart-heading"><h3>间隔区间 · 次数与占比</h3><span>横轴区间 · 纵轴次数 · 类别等距排列</span></div>
           <div id="interval-chart" aria-live="polite"></div>
           <p id="interval-note" class="notice interval-note"></p>
         </section>
         <section id="history-panel" class="panel history-panel" tabindex="-1" aria-labelledby="history-title" hidden>
           <div class="section-head"><div><span class="eyebrow">30-DAY OBSERVED HISTORY</span><h2 id="history-title">30 天累计历史</h2></div><span id="history-range" class="history-range"></span></div>
+          <p id="history-window-summary" class="history-window-summary"></p>
           <div id="history-metrics" class="metrics"></div>
-          <div class="chart-heading"><h3>已观察累计走势</h3><span>截至所选日期 · 30 个日历日</span></div>
+          <div class="chart-heading"><h3>窗口内已观察累计（非跨日余额）</h3><span>日终结果累加 · 不是逐次跨日曲线</span></div>
+          <div class="toolbar history-axis-controls"><label>显示轴<select id="history-axis" aria-label="累计历史显示轴"><option value="calendar">按日历日期 · 保留空档</option><option value="records">按有效记录序号 · 压缩空档</option></select></label><p id="history-axis-note" class="chart-note" aria-live="polite"></p></div>
+          <div class="history-legend" aria-label="累计图图例"><span class="history-legend-value">有效日累计点与普通连线</span><span class="history-legend-day">竖虚线：日期分界</span><span class="history-legend-idle">短虚线：已知未活动边界</span><span class="history-legend-gap">空白断线：未知缺口</span></div>
           <div id="cumulative-chart" class="chart cumulative-chart"></div>
           <p id="history-note" class="notice history-note"></p>
-          <div class="chart-heading"><h3>每日明细</h3><span>最近日期在前 · 累计从窗口起点计算</span></div>
+          <div class="chart-heading"><h3>30 日历日逐日核对</h3><span>最近日期在前 · 累计从窗口起点计算</span></div>
           <div class="table-scroll history-scroll"><table><thead><tr><th>日期</th><th>类别</th><th>观察量</th><th>当日净变化</th><th>已观察累计</th><th>状态</th></tr></thead><tbody id="history-rows"></tbody></table></div>
         </section>
         <section class="panel events-panel"><div class="section-head"><div><span class="eyebrow">RAW HIT HISTORY</span><h2>逐次记录 <small id="event-title"></small></h2></div><a id="source-link" target="_blank" rel="noopener noreferrer">查看原始页面 ↗</a></div><div id="event-quality" class="notice"></div><div class="table-scroll event-scroll"><table><thead><tr><th>时间</th><th>原始信号</th><th>事件间隔</th><th>原始回数</th><th>单次事件增量</th></tr></thead><tbody id="events"></tbody></table></div><p class="table-caption">这里的 A/B 是原始计数信号，不统一解释为首次事件、阶段事件 或连续事件。逐次表本身没有精确事件增量。</p></section>
@@ -86,7 +91,7 @@
         <div class="notice">只读历史邮件存档，未重算概率。正式预测目标为「次日最终净变化 ≥ +3,000」，不是「单次事件净上涨 >3,000」。概率列沿用原邮件展示值。</div>
         <section class="panel"><div class="section-head"><div><span class="eyebrow">ARCHIVED FORECAST</span><h2>原存档高值优先榜</h2></div><span id="archive-outcome" class="pill"></span></div><div class="table-scroll"><table><thead><tr><th>原排名</th><th>类别 / 编号</th><th>原邮件概率</th><th>实际最终净变化</th><th>复盘</th></tr></thead><tbody id="predictions"></tbody></table></div><p class="table-caption">没有当日观察、0 次观察 或类别不一致时不判命中；页面不重新选对象、不重排模型分数。</p></section>
         <section class="panel"><div class="section-head"><div><span class="eyebrow">RECORDED EVALUATION</span><h2>对应类别 AUC 存档</h2></div></div><p class="table-caption">对应原邮件展示概率列的 AUC；仅展示已有评估记录，不代表已重新核验训练过程，也不用于 >3000 单段锚点目标。</p><div class="table-scroll"><table><thead><tr><th>类别</th><th>AUC</th><th>正 / 负样本</th><th>原评估窗口</th></tr></thead><tbody id="auc"></tbody></table></div></section>
-        <section class="panel"><div class="section-head"><div><span class="eyebrow">EXPERIMENTAL / SEPARATE TARGET</span><h2>类别权重观察存档</h2></div></div><p class="table-caption">这是试验评分，不是概率；不可跨类别比较。小于 6 项的指定例外仍单独标为试验。</p><div class="table-scroll"><table><thead><tr><th>类别 / 编号</th><th>权重分</th><th>范围</th><th>完整性</th></tr></thead><tbody id="weights"></tbody></table></div></section>
+        <section class="panel"><div class="section-head"><div><span class="eyebrow">EXPERIMENTAL / SEPARATE TARGET</span><h2>类别权重观察存档</h2></div></div><p class="table-caption">这是试验评分，不是概率；不可跨类别比较。小于 6 项的指定例外仍单独标为试验。点击编号查看原评分信息截止日历史。</p><details class="first-open-audit"><summary>专属系数 0.35 未启用是什么意思？</summary><p id="weight-explanation" class="notice"></p></details><div class="table-scroll"><table><thead><tr><th>类别 / 编号</th><th>权重分</th><th>范围</th><th>评分覆盖</th></tr></thead><tbody id="weights"></tbody></table></div></section>
       </section>
       <section id="about-view" hidden>
         <div class="about-grid"><section class="panel"><span class="eyebrow">COVERAGE</span><h2>数据覆盖</h2><div id="coverage"></div></section><section class="panel"><span class="eyebrow">DATA LINEAGE</span><h2>三类数据，分别标注</h2><p>每日观察量、净变化、A/B：来源 A 网页数值表。</p><p>本页当日曲线：来源 A 页面中的数字坐标。连续同值点仅在显示时合并，横轴按变化序号排列，不代表实际时刻、时长或观察步数。</p><p>逐次时间、观察步数、信号：来源 B。每台每天与 A/B 核对；缺失或不一致明确标出。</p><p>首轮估算仅使用另一条来源 B 时钟轴图像数据链，与当日数值曲线分开核验，不混用坐标。</p></section><section class="panel"><span class="eyebrow">INTERPRETATION</span><h2>如何读这张表</h2><p>净变化是投入与获得之差，并非总事件增量。日净变化 ≥3,000 不等于某一次事件 >3,000。</p><p>0 次观察 是未观察到活动；缺日不是零。换类别后按当日类别展示，历史不强行连续。</p><p>曲线存在估计误差、截顶与采样限制，不能直接当成精确逐次数值。本页不新建锚点标签。</p><p>网页展示全部已采集的类别集合；正式邮件的至少 6 项及 7 天成熟期筛选不变。</p></section><section class="panel"><span class="eyebrow">UPDATE PATH</span><h2>每日更新方式</h2><p>现有采集任务完成后，重新导出网页数据。采集设备需要保持联网、可运行任务。</p><p>本地网页更新与 GitHub 上线是两个步骤。只有配置并验证发布后，远程网页才会同步；重新打开页面可读取最新版本。</p><p>网页导出只包含白名单数据，不包含邮箱、登录状态、密钥或整个项目。</p><p id="build-time"></p></section></div>

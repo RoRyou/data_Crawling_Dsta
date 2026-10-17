@@ -105,7 +105,9 @@ assert.ok(get("interval-range").textContent.endsWith(` · ${initialName}`));
 assert.match(get("interval-metrics").innerHTML,/当前样本数/);
 assert.match(get("interval-note").textContent,/不保证是首次事件/);
 if(!get("interval-chart").innerHTML.includes('class="empty"')) {
-  assert.match(get("interval-chart").innerHTML,/<progress[^>]+value="\d+" max="\d+"/);
+  assert.match(get("interval-chart").innerHTML,/<svg/);
+  assert.match(get("interval-chart").innerHTML,/横轴为间隔区间，纵轴为整数次数/);
+  assert.doesNotMatch(get("interval-chart").innerHTML,/<progress\b/);
   assert.doesNotMatch(get("interval-chart").innerHTML,/style=/); // Compatible with style-src 'self'.
 }
 get("history-open").events.click();
@@ -314,3 +316,6 @@ assert.equal(tied.get("error").hidden,true,tied.get("error").textContent);
 assertCategoryOrder(tied.get,latest.entities,tiedIndex);
 console.log("Frontend data/render smoke checks passed (not a browser visual test).");
 await import("./test_first_open_frontend.mjs");
+await import("./test_interval_line.mjs");
+await import("./test_history_readability.mjs");
+await import("./test_archive_navigation.mjs");
